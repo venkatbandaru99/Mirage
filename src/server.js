@@ -41,6 +41,15 @@ class MockServer {
   }
 
   _setupWebRoutes() {
+    // Simple health check for Railway
+    this.app.get('/health', (req, res) => {
+      res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        service: 'mirage'
+      });
+    });
+
     if (this.webMode) {
       // Serve examples folder for sample specs
       this.app.use('/examples', express.static(path.join(__dirname, '../examples')));
