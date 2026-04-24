@@ -6,9 +6,10 @@ interface HeaderProps {
   port: number
   onToggleServer: () => void
   accentColor: string
+  sessionId?: string
 }
 
-const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, accentColor }) => {
+const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, accentColor, sessionId }) => {
   const [hovered, setHovered] = useState(false)
 
   return (
@@ -47,6 +48,23 @@ const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, ac
 
       {/* Right: status + controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        {/* Session indicator */}
+        {sessionId && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              fontSize: 11,
+              color: 'var(--text3)',
+              fontFamily: 'var(--mono)',
+              background: 'var(--bg2)',
+              padding: '2px 6px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border2)'
+            }}>
+              Session: {sessionId.slice(-6)}
+            </span>
+          </div>
+        )}
+
         {/* Status indicator */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{

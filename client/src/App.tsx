@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Header from './components/Header'
 import SpecUploader from './components/SpecUploader'
 import EndpointExplorer from './components/EndpointExplorer'
@@ -26,8 +26,14 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logOpen, setLogOpen] = useState(true)
   const [validationResults, setValidationResults] = useState<any>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const accentColor = '#F5A623'
   const port = 3000
+
+  // Initialize session on app load
+  useEffect(() => {
+    checkServerStatus()
+  }, [])
 
   const handleSpecParsed = (parsedRoutes: ParsedRoute[], info: any, validation?: any) => {
     console.log('🔍 handleSpecParsed called with:', { parsedRoutes: parsedRoutes.length, info, validation })
@@ -46,6 +52,9 @@ function App() {
       const response = await fetch('/api/server/status')
       const data = await response.json()
       setServerRunning(data.running)
+      if (data.sessionId && !sessionId) {
+        setSessionId(data.sessionId)
+      }
     } catch (err) {
       console.error('Failed to check server status:', err)
     }
@@ -346,6 +355,7 @@ function App() {
         port={port}
         onToggleServer={toggleServer}
         accentColor={accentColor}
+        sessionId={sessionId || undefined}
       />
 
       <SpecUploader 

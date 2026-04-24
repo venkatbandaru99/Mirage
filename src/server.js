@@ -1,4 +1,5 @@
 const express = require('express');
+const session = require('express-session');
 const path = require('path');
 const DataGenerator = require('./generator');
 const SpecParser = require('./parser');
@@ -6,21 +7,48 @@ const SpecParser = require('./parser');
 class MockServer {
   constructor(parsedPaths, options = {}) {
     this.app = express();
-    this.parsedPaths = parsedPaths || {};
     this.port = options.port || 3000;
     this.generator = new DataGenerator();
     this.parser = new SpecParser();
     this.webMode = options.webMode || false;
-    this.mockServerEnabled = false;
     
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+    
+    // Session middleware for multi-user support
+    this.app.use(session({
+      secret: process.env.SESSION_SECRET || 'mirage-mock-server-secret',
+      resave: false,
+      saveUninitialized: true,
+      cookie: {
+        secure: false, // Set to true in production with HTTPS
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      }
+    }));
     
     this._setupMiddleware();
     this._setupWebRoutes();
     this._setupApiRoutes();
     this._setupMockRoutes();
     this._setupErrorHandling();
+  }
+
+  // Session helper methods
+  _initializeSession(req) {
+    if (!req.session.mirage) {
+      req.session.mirage = {
+        parsedPaths: {},
+        mockServerEnabled: false,
+        lastSpecContent: null,
+        lastSpecType: null,
+        sessionId: req.sessionID
+      };
+    }
+    return req.session.mirage;
+  }
+
+  _getSessionData(req) {
+    return this._initializeSession(req);
   }
 
   _setupMiddleware() {
@@ -69,6 +97,7 @@ class MockServer {
     this.app.post('/api/parse-spec', async (req, res) => {
       try {
         const { spec, type } = req.body;
+        const sessionData = this._getSessionData(req);
         
         if (!spec) {
           return res.status(400).json({ error: 'OpenAPI spec is required' });
@@ -88,22 +117,23 @@ class MockServer {
           
           // Validate the spec with original text for line numbers
           await specParser._validateAndParseSpec(specData, spec, type);
-          this.parsedPaths = specParser.getParsedPaths();
+          sessionData.parsedPaths = specParser.getParsedPaths();
         } else {
           return res.status(400).json({ error: 'Invalid spec type. Must be yaml or json' });
         }
 
         const validationResults = specParser.getValidationResults();
 
-        // Store the spec content and type for re-validation
-        this.lastSpecContent = spec;
-        this.lastSpecType = type;
+        // Store the spec content and type for re-validation in session
+        sessionData.lastSpecContent = spec;
+        sessionData.lastSpecType = type;
 
         res.json({
           success: true,
-          paths: this.parsedPaths,
+          paths: sessionData.parsedPaths,
           info: specParser.getSpec()?.info || {},
-          validation: validationResults
+          validation: validationResults,
+          sessionId: sessionData.sessionId
         });
       } catch (error) {
         res.status(400).json({
@@ -114,7 +144,8 @@ class MockServer {
     });
 
     this.app.get('/api/routes', (req, res) => {
-      const routes = Object.entries(this.parsedPaths).map(([key, info]) => ({
+      const sessionData = this._getSessionData(req);
+      const routes = Object.entries(sessionData.parsedPaths).map(([key, info]) => ({
         route: key,
         path: info.path,
         method: info.method,
@@ -124,18 +155,20 @@ class MockServer {
         requestBodySchema: info.requestBody?.schema || null
       }));
       
-      res.json({ routes });
+      res.json({ routes, sessionId: sessionData.sessionId });
     });
 
     // Server control endpoints
     this.app.post('/api/server/start', (req, res) => {
       try {
+        const sessionData = this._getSessionData(req);
         // In web mode, the server is already running, so we just enable mock endpoints
-        this.mockServerEnabled = true;
+        sessionData.mockServerEnabled = true;
         res.json({ 
           success: true, 
           message: 'Mock server enabled',
-          endpoints: Object.keys(this.parsedPaths).length
+          endpoints: Object.keys(sessionData.parsedPaths).length,
+          sessionId: sessionData.sessionId
         });
       } catch (error) {
         res.status(500).json({ error: 'Failed to start mock server', message: error.message });
@@ -144,11 +177,13 @@ class MockServer {
 
     this.app.post('/api/server/stop', (req, res) => {
       try {
+        const sessionData = this._getSessionData(req);
         // Disable mock endpoints but keep web interface running
-        this.mockServerEnabled = false;
+        sessionData.mockServerEnabled = false;
         res.json({ 
           success: true, 
-          message: 'Mock server disabled' 
+          message: 'Mock server disabled',
+          sessionId: sessionData.sessionId 
         });
       } catch (error) {
         res.status(500).json({ error: 'Failed to stop mock server', message: error.message });
@@ -156,20 +191,25 @@ class MockServer {
     });
 
     this.app.get('/api/server/status', (req, res) => {
+      const sessionData = this._getSessionData(req);
       res.json({
-        running: this.mockServerEnabled || false,
-        endpoints: Object.keys(this.parsedPaths).length,
-        port: this.port
+        running: sessionData.mockServerEnabled || false,
+        endpoints: Object.keys(sessionData.parsedPaths).length,
+        port: this.port,
+        sessionId: sessionData.sessionId
       });
     });
 
     // Endpoint to re-validate current spec
     this.app.get('/api/validate-current-spec', async (req, res) => {
       try {
-        if (!this.lastSpecContent || !this.lastSpecType) {
+        const sessionData = this._getSessionData(req);
+        
+        if (!sessionData.lastSpecContent || !sessionData.lastSpecType) {
           return res.status(404).json({
             error: 'No spec loaded',
-            message: 'No OpenAPI specification is currently loaded for validation'
+            message: 'No OpenAPI specification is currently loaded for validation',
+            sessionId: sessionData.sessionId
           });
         }
 
@@ -180,17 +220,17 @@ class MockServer {
         
         // Parse the spec from the raw content
         let specObject;
-        if (this.lastSpecType === 'yaml') {
-          specObject = yaml.load(this.lastSpecContent);
+        if (sessionData.lastSpecType === 'yaml') {
+          specObject = yaml.load(sessionData.lastSpecContent);
         } else {
-          specObject = JSON.parse(this.lastSpecContent);
+          specObject = JSON.parse(sessionData.lastSpecContent);
         }
         
         // Validate the parsed spec
         const parsedSpec = await SwaggerParser.validate(specObject);
         
         const validator = new SpecValidator();
-        const validationResults = validator.validateSpec(parsedSpec, this.lastSpecContent, this.lastSpecType);
+        const validationResults = validator.validateSpec(parsedSpec, sessionData.lastSpecContent, sessionData.lastSpecType);
 
         console.log('🔍 Re-validation complete:');
         console.log(`  - Quality Score: ${validationResults.qualityScore}%`);
@@ -199,7 +239,8 @@ class MockServer {
         res.json({
           success: true,
           validation: validationResults,
-          message: 'Current spec re-validated successfully'
+          message: 'Current spec re-validated successfully',
+          sessionId: sessionData.sessionId
         });
       } catch (error) {
         console.error('Validation error:', error);
@@ -222,22 +263,25 @@ class MockServer {
         return next();
       }
 
-      // Check if mock server is enabled
-      if (!this.mockServerEnabled) {
+      const sessionData = this._getSessionData(req);
+
+      // Check if mock server is enabled for this session
+      if (!sessionData.mockServerEnabled) {
         return res.status(503).json({
           error: 'Mock server is disabled',
           message: 'Please enable the mock server to test endpoints',
+          sessionId: sessionData.sessionId,
           timestamp: new Date().toISOString()
         });
       }
 
-      // Find matching route in parsedPaths
+      // Find matching route in session's parsedPaths
       const routeKey = `${req.method} ${req.path}`;
-      let matchedRoute = this.parsedPaths[routeKey];
+      let matchedRoute = sessionData.parsedPaths[routeKey];
       
       // If not found, try with path parameters
       if (!matchedRoute) {
-        for (const [key, routeInfo] of Object.entries(this.parsedPaths)) {
+        for (const [key, routeInfo] of Object.entries(sessionData.parsedPaths)) {
           const [method, path] = key.split(' ', 2);
           if (method === req.method) {
             const expressPath = this._convertOpenAPIPathToExpress(path);
@@ -259,15 +303,18 @@ class MockServer {
     });
 
     this.app.get('/_mirage/health', (req, res) => {
+      const sessionData = this._getSessionData(req);
       res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
-        routes: Object.keys(this.parsedPaths).length
+        routes: Object.keys(sessionData.parsedPaths).length,
+        sessionId: sessionData.sessionId
       });
     });
 
     this.app.get('/_mirage/routes', (req, res) => {
-      const routes = Object.entries(this.parsedPaths).map(([key, info]) => ({
+      const sessionData = this._getSessionData(req);
+      const routes = Object.entries(sessionData.parsedPaths).map(([key, info]) => ({
         route: key,
         path: info.path,
         method: info.method,
@@ -275,7 +322,7 @@ class MockServer {
         responseTypes: Object.keys(info.responses || {})
       }));
       
-      res.json({ routes });
+      res.json({ routes, sessionId: sessionData.sessionId });
     });
 
     // Catch-all route for SPA (must be last)
@@ -383,14 +430,8 @@ class MockServer {
             console.log(`📡 API endpoints: http://localhost:${this.port}/api/*`);
           }
           
-          const routeCount = Object.keys(this.parsedPaths).length;
-          if (routeCount > 0) {
-            console.log(`📋 ${routeCount} mock endpoint${routeCount === 1 ? '' : 's'} available:`);
-            
-            Object.entries(this.parsedPaths).forEach(([routeKey, routeInfo]) => {
-              console.log(`   ${routeKey}`);
-            });
-          }
+          // Note: Routes are now session-specific and will be shown when users upload specs
+          console.log(`📋 Mock endpoints will be available per user session after uploading OpenAPI specs`);
           
           console.log(`\n💡 Health check: GET http://localhost:${this.port}/_mirage/health`);
           console.log(`📝 Route info: GET http://localhost:${this.port}/_mirage/routes\n`);
