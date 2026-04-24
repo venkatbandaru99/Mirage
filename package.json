@@ -1,0 +1,53 @@
+{
+  "name": "mirage",
+  "version": "1.0.0",
+  "description": "A developer productivity tool that accepts an OpenAPI spec and spins up a fully functional local mock server with realistic constraint-aware dummy data",
+  "main": "src/index.js",
+  "bin": {
+    "mirage": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js --spec examples/sample-spec.yaml --port ${PORT:-3001}",
+    "start:web": "node src/index.js --web --port ${PORT:-3001}",
+    "dev": "node src/index.js --spec examples/sample-spec.yaml --port 3001",
+    "dev:web": "concurrently \"yarn dev:server\" \"yarn dev:client\"",
+    "dev:server": "node src/index.js --web --port 3001",
+    "dev:client": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "openapi",
+    "mock",
+    "server",
+    "api",
+    "development",
+    "cli"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@apidevtools/swagger-parser": "^10.1.0",
+    "@faker-js/faker": "^8.4.1",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.5.0",
+    "commander": "^11.1.0",
+    "express": "^4.18.2",
+    "js-yaml": "^4.1.0",
+    "openapi-types": "^12.1.3",
+    "postcss": "^8.5.10",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.10"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.4",
+    "concurrently": "^9.2.1"
+  }
+}

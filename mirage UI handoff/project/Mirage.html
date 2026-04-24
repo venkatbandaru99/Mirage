@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mirage — Mock API Server</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<!-- lucide icons inlined as React components -->
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #F4F5F7;
+    --surface:   #FFFFFF;
+    --surface2:  #F0F1F4;
+    --surface3:  #E8EAF0;
+    --border:    #E2E4EC;
+    --border2:   #D4D7E3;
+    --amber:     #F5A623;
+    --amber-dim: #C07A10;
+    --amber-glow:rgba(245,166,35,0.10);
+    --green:     #18A86B;
+    --red:       #E03E35;
+    --blue:      #2F7FD4;
+    --purple:    #7C5CE8;
+    --text:      #14161E;
+    --text2:     #4A5068;
+    --text3:     #9096AC;
+    --mono:      'JetBrains Mono', monospace;
+    --display:   'Space Grotesk', sans-serif;
+    --radius:    6px;
+    --radius2:   10px;
+  }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: var(--display);
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  /* Noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 128px 128px;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.4;
+  }
+
+  /* Subtle grid */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #root { height: 100vh; position: relative; z-index: 1; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+  /* Stagger animation */
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(61,214,140,0.4); }
+    50%       { opacity: 0.8; box-shadow: 0 0 0 5px rgba(61,214,140,0); }
+  }
+
+  @keyframes pulse-amber {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245,166,35,0.5); }
+    50%       { box-shadow: 0 0 0 5px rgba(245,166,35,0); }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .endpoint-row {
+    opacity: 0;
+    animation: fadeSlideIn 0.35s ease forwards;
+  }
+
+  .response-fade {
+    animation: fadeIn 0.2s ease forwards;
+  }
+
+  .log-entry {
+    animation: fadeIn 0.15s ease forwards;
+  }
+
+  .panel-slide {
+    animation: slideUp 0.25s ease forwards;
+  }
+
+  /* Tweak panel */
+  .tweaks-panel {
+    display: none;
+    position: fixed;
+    bottom: 80px;
+    right: 16px;
+    width: 240px;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius2);
+    padding: 16px;
+    z-index: 1000;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .tweaks-panel.open { display: block; animation: slideUp 0.2s ease forwards; }
+  .tweak-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); margin-bottom: 6px; }
+  .tweak-row { margin-bottom: 14px; }
+  .tweak-select, .tweak-input {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text); font-family: var(--display); font-size: 12px; padding: 6px 8px; outline: none;
+  }
+  .tweak-select:focus, .tweak-input:focus { border-color: var(--amber); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+
+
+
+const { useState, useEffect, useRef, useCallback } = React;
+// Inline SVG icon components (lucide-compatible paths)
+const iconPaths = {
+  Square: <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />,
+  Play: <polygon points="5 3 19 12 5 21 5 3" />,
+  Upload: <><polyline points="16 16 12 12 8 16" /><line x1="12" y1="12" x2="12" y2="21" /><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" /></>,
+  CheckCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>,
+  XCircle: <><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></>,
+  Trash2: <><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></>,
+  ChevronRight: <polyline points="9 18 15 12 9 6" />,
+  ChevronDown: <polyline points="6 9 12 15 18 9" />,
+  ChevronUp: <polyline points="18 15 12 9 6 15" />,
+  Clock: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
+  Copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
+  RefreshCw: <><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></>,
+  MousePointerClick: <><path d="m9 9 5 12 1.8-5.2L21 14Z" /><path d="M7.2 2.2 8 5.1" /><path d="m5.1 8-2.9-.8" /><path d="M14 4.1 12 6" /><path d="m6 12-1.9 2" /></>,
+  Check: <polyline points="20 6 9 17 4 12" />,
+  Loader: <><line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" /><line x1="4.93" y1="4.93" x2="7.76" y2="7.76" /><line x1="16.24" y1="16.24" x2="19.07" y2="19.07" /><line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" /><line x1="4.93" y1="19.07" x2="7.76" y2="16.24" /><line x1="16.24" y1="7.76" x2="19.07" y2="4.93" /></>,
+  FileCode: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><polyline points="10 13 8 15 10 17" /><polyline points="14 13 16 15 14 17" /></>,
+  Pencil: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></>,
+  AlertCircle: <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>,
+  AlertTriangle: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
+  Lightbulb: <><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z" /></>,
+  FolderOpen: <><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></>,
+  Clipboard: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" ry="1" /></>
+};
+
+function Icon({ name, size = 16, color = 'currentColor', strokeWidth = 1.5, style = {} }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size} height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={style}>
+      
+      {iconPaths[name]}
+    </svg>);
+
+}
+
+// Alias so existing code works
+const Icons = new Proxy({}, {
+  get(_, name) {
+    return ({ size, color, strokeWidth, style }) =>
+    <Icon name={name} size={size} color={color} strokeWidth={strokeWidth} style={style} />;
+  }
+});
+
+// ─── Colour system ───────────────────────────────────────────────────────────
+const METHOD_COLORS = {
+  GET: { bg: 'rgba(47,127,212,0.10)', text: '#2F7FD4', border: 'rgba(47,127,212,0.25)' },
+  POST: { bg: 'rgba(24,168,107,0.10)', text: '#18A86B', border: 'rgba(24,168,107,0.25)' },
+  PUT: { bg: 'rgba(217,119,6,0.10)', text: '#B45309', border: 'rgba(217,119,6,0.25)' },
+  DELETE: { bg: 'rgba(224,62,53,0.10)', text: '#E03E35', border: 'rgba(224,62,53,0.25)' },
+  PATCH: { bg: 'rgba(124,92,232,0.10)', text: '#7C5CE8', border: 'rgba(124,92,232,0.25)' }
+};
+
+// ─── Mock data ───────────────────────────────────────────────────────────────
+const DEMO_SPEC_NAME = 'sample-spec.yaml';
+const DEMO_SPEC_SIZE = '14.2 KB';
+
+const DEMO_ENDPOINTS = [
+{ id: 1, group: 'Customers', method: 'GET', path: '/customers', summary: 'List all customers' },
+{ id: 2, group: 'Customers', method: 'POST', path: '/customers', summary: 'Create a customer' },
+{ id: 3, group: 'Customers', method: 'GET', path: '/customers/{id}', summary: 'Get customer by ID' },
+{ id: 4, group: 'Customers', method: 'PUT', path: '/customers/{id}', summary: 'Update customer' },
+{ id: 5, group: 'Customers', method: 'DELETE', path: '/customers/{id}', summary: 'Delete customer' },
+{ id: 6, group: 'Orders', method: 'GET', path: '/orders', summary: 'List all orders' },
+{ id: 7, group: 'Orders', method: 'POST', path: '/orders', summary: 'Place an order' },
+{ id: 8, group: 'Orders', method: 'GET', path: '/orders/{orderId}', summary: 'Get order by ID' },
+{ id: 9, group: 'Orders', method: 'PATCH', path: '/orders/{orderId}', summary: 'Update order status' },
+{ id: 10, group: 'Orders', method: 'DELETE', path: '/orders/{orderId}', summary: 'Cancel an order' },
+{ id: 11, group: 'Products', method: 'GET', path: '/products', summary: 'List products' },
+{ id: 12, group: 'Products', method: 'POST', path: '/products', summary: 'Create product' },
+{ id: 13, group: 'Products', method: 'GET', path: '/products/{productId}', summary: 'Get product by ID' },
+{ id: 14, group: 'Auth', method: 'POST', path: '/auth/login', summary: 'Authenticate user' },
+{ id: 15, group: 'Auth', method: 'POST', path: '/auth/refresh', summary: 'Refresh access token' },
+{ id: 16, group: 'Auth', method: 'DELETE', path: '/auth/logout', summary: 'Invalidate session' }];
+
+
+
+const MOCK_RESPONSES = {
+  1: { status: 200, body: { data: [{ id: 'cust_a1b2', name: 'Acme Corp', email: 'billing@acme.com', plan: 'enterprise', mrr: 4200, createdAt: '2025-01-15T00:00:00Z' }, { id: 'cust_c3d4', name: 'Globex', email: 'ap@globex.io', plan: 'growth', mrr: 890, createdAt: '2025-03-22T00:00:00Z' }], total: 238, page: 1, pageSize: 20 } },
+  2: { status: 201, body: { id: 'cust_e5f6', name: 'Initech', email: 'admin@initech.com', plan: 'starter', mrr: 0, status: 'trialing', createdAt: '2026-04-23T09:41:12Z' } },
+  3: { status: 200, body: { id: 'cust_a1b2', name: 'Acme Corp', email: 'billing@acme.com', plan: 'enterprise', mrr: 4200, seats: 120, status: 'active', metadata: { csm: 'ada@us.com', tier: 1 } } },
+  4: { status: 200, body: { id: 'cust_a1b2', plan: 'enterprise_plus', mrr: 6500, updatedAt: '2026-04-23T09:41:12Z' } },
+  5: { status: 204, body: null },
+  6: { status: 200, body: { data: [{ id: 'ord_8a9b', customerId: 'cust_a1b2', status: 'fulfilled', total: 4200.00, currency: 'USD', items: 3 }, { id: 'ord_7c8d', customerId: 'cust_c3d4', status: 'pending', total: 890.00, currency: 'USD', items: 1 }], total: 47, page: 1 } },
+  7: { status: 201, body: { id: 'ord_9e0f', customerId: 'cust_e5f6', status: 'pending', total: 0, currency: 'USD', createdAt: '2026-04-23T09:41:12Z' } },
+  8: { status: 200, body: { id: 'ord_8a9b', customerId: 'cust_a1b2', status: 'fulfilled', total: 4200.00, currency: 'USD', items: [{ sku: 'ENT-SEAT', qty: 120, unitPrice: 35 }], fulfilledAt: '2026-04-20T14:22:00Z' } },
+  9: { status: 200, body: { id: 'ord_8a9b', status: 'processing', updatedAt: '2026-04-23T09:41:12Z' } },
+  10: { status: 204, body: null },
+  11: { status: 200, body: { data: [{ id: 'prod_001', name: 'Starter Plan', sku: 'STARTER', price: 49, currency: 'USD', active: true }, { id: 'prod_002', name: 'Growth Plan', sku: 'GROWTH', price: 199, currency: 'USD', active: true }], total: 6 } },
+  12: { status: 201, body: { id: 'prod_007', name: 'Enterprise Plus', sku: 'ENT-PLUS', price: 999, currency: 'USD', active: false, createdAt: '2026-04-23T09:41:12Z' } },
+  13: { status: 200, body: { id: 'prod_001', name: 'Starter Plan', sku: 'STARTER', price: 49, currency: 'USD', active: true, features: ['api_access', 'webhooks', 'sso'] } },
+  14: { status: 200, body: { accessToken: 'eyJhbGciOiJSUzI1NiJ9...', refreshToken: 'rt_9f8e7d6c...', expiresIn: 3600, tokenType: 'Bearer' } },
+  15: { status: 200, body: { accessToken: 'eyJhbGciOiJSUzI1NiJ9...', expiresIn: 3600, tokenType: 'Bearer' } },
+  16: { status: 204, body: null }
+};
+
+function randBetween(a, b) {return Math.floor(Math.random() * (b - a + 1)) + a;}
+
+// ─── JSON Syntax Highlighter ─────────────────────────────────────────────────
+function highlightJson(json) {
+  if (!json) return '';
+  return json.
+  replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').
+  replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
+    let cls = 'json-num';
+    if (/^"/.test(match)) {
+      cls = /:$/.test(match) ? 'json-key' : 'json-str';
+    } else if (/true|false/.test(match)) {
+      cls = 'json-bool';
+    } else if (/null/.test(match)) {
+      cls = 'json-null';
+    }
+    return `<span class="${cls}">${match}</span>`;
+  });
+}
+
+// ─── Method Badge ─────────────────────────────────────────────────────────────
+function MethodBadge({ method }) {
+  const c = METHOD_COLORS[method] || METHOD_COLORS.GET;
+  return (
+    <span style={{
+      display: 'inline-block', minWidth: 54, textAlign: 'center',
+      padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600,
+      letterSpacing: '0.06em', fontFamily: 'var(--mono)',
+      background: c.bg, color: c.text, border: `1px solid ${c.border}`
+    }}>
+      {method}
+    </span>);
+
+}
+
+// ─── Header ──────────────────────────────────────────────────────────────────
+function Header({ serverRunning, port, onToggleServer, accentColor }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <header style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '0 24px', height: 56,
+      borderBottom: '1px solid var(--border)',
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(244,245,247,0.9) 100%)',
+      backdropFilter: 'blur(12px)',
+      flexShrink: 0
+    }}>
+      {/* Left: wordmark */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+        <span style={{
+          fontFamily: 'var(--display)', fontWeight: 700, fontSize: 20,
+          letterSpacing: '-0.03em', color: 'var(--text)'
+        }}>
+          <span style={{ color: accentColor }}>M</span>irage
+        </span>
+        <span style={{
+          fontSize: 11, color: 'var(--text3)', fontWeight: 400, letterSpacing: '0.01em',
+          paddingLeft: 2
+        }}>
+          Spin up mock APIs from spec. Instantly.
+        </span>
+      </div>
+
+      {/* Right: status + controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        {/* Status indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: serverRunning ? 'var(--green)' : 'var(--text3)',
+            animation: serverRunning ? 'pulse-dot 2s ease infinite' : 'none'
+          }} />
+          <span style={{ fontSize: 12, color: serverRunning ? 'var(--text)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>
+            {serverRunning ? `localhost:${port}` : 'offline'}
+          </span>
+        </div>
+
+        {/* Divider */}
+        <div style={{ width: 1, height: 20, background: 'var(--border2)' }} />
+
+        {/* Start/Stop button */}
+        <button
+          onClick={onToggleServer}
+          onMouseEnter={() => setHov(true)}
+          onMouseLeave={() => setHov(false)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 7,
+            padding: '7px 16px', borderRadius: 'var(--radius)',
+            border: `1px solid ${serverRunning ? 'rgba(240,88,77,0.4)' : accentColor + '80'}`,
+            background: serverRunning ?
+            hov ? 'rgba(240,88,77,0.15)' : 'rgba(240,88,77,0.08)' :
+            hov ? accentColor + '22' : accentColor + '12',
+            color: serverRunning ? 'var(--red)' : accentColor,
+            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            transition: 'all 0.15s ease', fontFamily: 'var(--display)',
+            letterSpacing: '0.01em'
+          }}>
+          
+          {serverRunning ?
+          <><Icons.Square size={13} strokeWidth={2.5} style={{ marginTop: 0 }} /> Stop Server</> :
+          <><Icons.Play size={13} strokeWidth={2.5} style={{ marginTop: 0 }} /> Start Server</>
+          }
+        </button>
+      </div>
+    </header>);
+
+}
+
+// ─── Spec Upload Panel ────────────────────────────────────────────────────────
+function SpecPanel({ specLoaded, specName, specSize, specValid, onLoadDemo, onClear, onEdit, accentColor }) {
+  const [dragging, setDragging] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const fileRef = useRef(null);
+
+  const handlePasteSubmit = () => {
+    if (!pasteText.trim()) return;
+    setPasteOpen(false);
+    setPasteText('');
+    onLoadDemo();
+  };
+
+  if (specLoaded) {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 20px',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--surface)',
+        flexShrink: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {specValid ?
+          <Icons.CheckCircle size={15} color="var(--green)" strokeWidth={2} /> :
+          <Icons.XCircle size={15} color="var(--red)" strokeWidth={2} />
+          }
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}>{specName}</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>{specSize}</span>
+          <div style={{
+            padding: '2px 8px', borderRadius: 3, background: 'rgba(61,214,140,0.1)',
+            border: '1px solid rgba(61,214,140,0.25)', color: 'var(--green)', fontSize: 10,
+            fontWeight: 600, letterSpacing: '0.06em'
+          }}>
+            VALID • OpenAPI 3.0
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:6 }}>
+          <button
+            onClick={onEdit}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px',
+              borderRadius: 4, border: '1px solid var(--border2)',
+              background: 'transparent', color: 'var(--text2)', fontSize: 11,
+              cursor: 'pointer', fontFamily: 'var(--display)'
+            }}>
+            <Icons.Pencil size={11} strokeWidth={2} /> Edit
+          </button>
+          <button
+            onClick={onClear}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px',
+              borderRadius: 4, border: '1px solid var(--border2)',
+              background: 'transparent', color: 'var(--text3)', fontSize: 11,
+              cursor: 'pointer', fontFamily: 'var(--display)'
+            }}>
+            <Icons.Trash2 size={11} strokeWidth={2} /> Clear
+          </button>
+        </div>
+      </div>);
+
+  }
+
+  return (
+    <>
+    <div style={{
+        padding: '16px 20px',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--surface)',
+        flexShrink: 0
+      }}>
+      <div
+          onDragOver={(e) => {e.preventDefault();setDragging(true);}}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {e.preventDefault();setDragging(false);onLoadDemo();}}
+          style={{
+            border: `1.5px dashed ${dragging ? accentColor : 'var(--border2)'}`,
+            borderRadius: 'var(--radius2)',
+            padding: '20px 24px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: dragging ? 'rgba(245,166,35,0.05)' : 'var(--surface2)',
+            transition: 'all 0.2s ease', cursor: 'default'
+          }}>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{
+              width: 36, height: 36, borderRadius: 8,
+              background: 'var(--surface3)', border: '1px solid var(--border2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+            <Icons.Upload size={16} color="var(--text2)" strokeWidth={1.5} />
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>
+              Drop your OpenAPI spec here
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+              Supports JSON or YAML — OpenAPI 2.0 / 3.0 / 3.1
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* Hidden file input */}
+          <input ref={fileRef} type="file" accept=".json,.yaml,.yml" style={{ display: 'none' }}
+            onChange={() => {if (fileRef.current?.files?.length) onLoadDemo();}} />
+
+          <button
+              onClick={() => fileRef.current?.click()}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 14px', borderRadius: 'var(--radius)',
+                border: `1px solid ${accentColor}40`,
+                background: accentColor + '18', color: accentColor,
+                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                fontFamily: 'var(--display)'
+              }}>
+            <Icons.FolderOpen size={13} strokeWidth={1.5} /> Browse
+          </button>
+
+          <button
+              onClick={() => setPasteOpen(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 14px', borderRadius: 'var(--radius)',
+                border: `1px solid ${accentColor}40`,
+                background: accentColor + '18', color: accentColor,
+                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                fontFamily: 'var(--display)'
+              }}>
+            <Icons.Clipboard size={13} strokeWidth={1.5} /> Paste
+          </button>
+
+          <div style={{ width: 1, height: 20, background: 'var(--border2)' }} />
+
+          <button
+              onClick={onLoadDemo}
+              style={{
+                padding: '7px 14px', borderRadius: 'var(--radius)',
+                border: `1px solid ${accentColor}40`,
+                background: accentColor + '18', color: accentColor,
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                fontFamily: 'var(--display)'
+              }}>
+            Load demo spec
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {/* Paste Modal */}
+    {pasteOpen &&
+      <div style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)',
+        zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }} onClick={() => setPasteOpen(false)}>
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="panel-slide"
+          style={{
+            width: 580, background: 'var(--surface)', border: '1px solid var(--border2)',
+            borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,0.18)', overflow: 'hidden'
+          }}>
+          {/* Modal header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Paste OpenAPI Spec</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Paste your JSON or YAML spec below</div>
+            </div>
+            <button onClick={() => setPasteOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4 }}>
+              <Icons.XCircle size={16} strokeWidth={1.5} />
+            </button>
+          </div>
+          {/* Textarea */}
+          <div style={{ padding: '16px 20px' }}>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder={`openapi: 3.0.0\ninfo:\n  title: My API\n  version: 1.0.0\npaths:\n  /users:\n    get:\n      summary: List users\n      responses:\n        '200':\n          description: OK`}
+              autoFocus
+              style={{
+                width: '100%', height: 260, fontFamily: 'var(--mono)', fontSize: 11.5,
+                background: 'var(--surface2)', border: '1px solid var(--border)',
+                borderRadius: 6, padding: 12, color: 'var(--text)', resize: 'none',
+                outline: 'none', lineHeight: 1.6
+              }} />
+            
+          </div>
+          {/* Footer */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '0 20px 16px' }}>
+            <button onClick={() => setPasteOpen(false)} style={{ padding: '8px 16px', borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'none', color: 'var(--text2)', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--display)' }}>
+              Cancel
+            </button>
+            <button
+              onClick={handlePasteSubmit}
+              disabled={!pasteText.trim()}
+              style={{
+                padding: '8px 20px', borderRadius: 'var(--radius)',
+                border: `1px solid ${accentColor}60`,
+                background: pasteText.trim() ? accentColor : accentColor + '40',
+                color: pasteText.trim() ? '#fff' : accentColor + '80',
+                fontSize: 12, fontWeight: 600, cursor: pasteText.trim() ? 'pointer' : 'default',
+                fontFamily: 'var(--display)', transition: 'all 0.15s'
+              }}>
+              Load Spec
+            </button>
+          </div>
+        </div>
+      </div>
+      }
+    </>);
+
+}
+
+// ─── Validation Panel ─────────────────────────────────────────────────────────
+const VALIDATION_DATA = {
+  score: 54,
+  errors: [
+  { path: '/customers/{id}', message: 'Missing required response schema for 404' },
+  { path: '/orders', message: 'POST request body schema not defined' },
+  { path: '/auth/login', message: 'Response 401 has no description' }],
+
+  warnings: [],
+  suggestions: [
+  { path: '/customers', message: 'Add pagination parameters (page, limit)' },
+  { path: '/products/{productId}', message: 'Consider adding a 404 response example' }],
+
+  checks: { passed: 237, total: 438 }
+};
+
+function ValidationPanel({ open, onClose, accentColor }) {
+  const [filter, setFilter] = useState('errors');
+  if (!open) return null;
+  const { score, errors, warnings, suggestions, checks } = VALIDATION_DATA;
+  const scoreColor = score >= 80 ? 'var(--green)' : score >= 50 ? accentColor : 'var(--red)';
+  const items = filter === 'errors' ? errors : filter === 'warnings' ? warnings : suggestions;
+  return (
+    <div className="panel-slide" style={{
+      flexShrink: 0, borderBottom: '1px solid var(--border)',
+      background: 'var(--surface2)'
+    }}>
+      <div style={{ padding: '10px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.01em' }}>Spec Validation</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 11, fontFamily: 'var(--display)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Icons.ChevronUp size={11} strokeWidth={2} /> Hide
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'stretch', marginBottom: 10 }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', minWidth: 100 }}>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 3 }}>Quality Score</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: scoreColor, lineHeight: 1 }}>{score}<span style={{ fontSize: 12, fontWeight: 400 }}>%</span></div>
+            <div style={{ marginTop: 5, width: '100%', height: 3, background: 'var(--surface3)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: `${score}%`, height: '100%', background: scoreColor, transition: 'width 0.8s' }} />
+            </div>
+          </div>
+          {[
+          { label: 'Errors',     count: errors.length,      hex: '#E03E35', key: 'errors' },
+          { label: 'Warnings',   count: warnings.length,    hex: '#D97706', key: 'warnings' },
+          { label: 'Suggestions',count: suggestions.length, hex: '#2F7FD4', key: 'suggestions' },
+          { label: 'Checks',     count: `${checks.passed}/${checks.total}`, hex: '#4A5068', key: null }].
+          map(({ label, count, hex, key }) =>
+          <div key={label}
+            onClick={() => key && count && setFilter(key)}
+            style={{
+              flex: 1, textAlign: 'center',
+              background: filter === key ? hex + '18' : 'var(--surface)',
+              border: `1px solid ${filter === key ? hex + '66' : 'var(--border)'}`,
+              borderRadius: 6, padding: '6px 4px',
+              cursor: key && count ? 'pointer' : 'default',
+              opacity: key && !count ? 0.35 : 1, transition: 'all 0.15s',
+              userSelect: 'none',
+            }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: hex, lineHeight: 1.2 }}>{count}</div>
+              <div style={{ fontSize: 9, color: 'var(--text3)', letterSpacing: '0.06em', marginTop: 2 }}>{label.toUpperCase()}</div>
+            </div>
+          )}
+        </div>
+        {items.length > 0 &&
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 6, maxHeight: 80, overflow: 'auto' }}>
+            {items.map((item, i) =>
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', borderBottom: i < items.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
+                {filter === 'errors' && <Icons.AlertCircle size={11} color="var(--red)" strokeWidth={2} />}
+                {filter === 'warnings' && <Icons.AlertTriangle size={11} color="var(--amber)" strokeWidth={2} />}
+                {filter === 'suggestions' && <Icons.Lightbulb size={11} color="var(--blue)" strokeWidth={2} />}
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', minWidth: 160 }}>{item.path}</span>
+                <span style={{ fontSize: 11, color: 'var(--text2)', flex: 1 }}>{item.message}</span>
+              </div>
+          )}
+          </div>
+        }
+        {items.length === 0 && <div style={{ fontSize: 11, color: 'var(--text3)', paddingTop: 2 }}>No {filter} — looking good.</div>}
+      </div>
+    </div>);
+
+}
+
+// ─── Endpoint Row ─────────────────────────────────────────────────────────────
+function EndpointRow({ ep, idx, selected, onSelect, onTry, serverRunning }) {
+  const [hov, setHov] = useState(false);
+  const isSelected = selected?.id === ep.id;
+  return (
+    <div
+      className="endpoint-row"
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      onClick={() => onSelect(ep)}
+      style={{
+        animationDelay: `${idx * 45}ms`,
+        display: 'flex', alignItems: 'center', gap: 14,
+        padding: '9px 16px',
+        borderRadius: 5,
+        marginBottom: 2,
+        cursor: 'pointer',
+        background: isSelected ?
+        'rgba(245,166,35,0.07)' :
+        hov ? 'var(--surface2)' : 'transparent',
+        borderLeft: `2px solid ${isSelected ? 'var(--amber)' : 'transparent'}`,
+        transition: 'background 0.1s ease, border-color 0.15s ease'
+      }}>
+      
+      <MethodBadge method={ep.method} />
+      <span style={{
+        flex: 1, fontFamily: 'var(--mono)', fontSize: 12, color: isSelected ? 'var(--text)' : 'var(--text)',
+        letterSpacing: '-0.01em'
+      }}>
+        {ep.path}
+      </span>
+      <span style={{ fontSize: 11, color: 'var(--text3)', flex: 0, minWidth: 160, textAlign: 'right', paddingRight: 8 }}>
+        {ep.summary}
+      </span>
+      {(hov || isSelected) &&
+      <button
+        onClick={(e) => {e.stopPropagation();onTry(ep);}}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '4px 10px', borderRadius: 4,
+          border: '1px solid rgba(245,166,35,0.3)',
+          background: 'rgba(245,166,35,0.1)', color: 'var(--amber)',
+          fontSize: 10, fontWeight: 600, cursor: 'pointer',
+          fontFamily: 'var(--display)', letterSpacing: '0.04em',
+          whiteSpace: 'nowrap'
+        }}>
+        
+          <Icons.Play size={9} strokeWidth={2.5} /> TRY
+        </button>
+      }
+    </div>);
+
+}
+
+// ─── Group Section ─────────────────────────────────────────────────────────────
+function EndpointGroup({ name, endpoints, selectedEp, onSelect, onTry, serverRunning, baseIdx }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          width: '100%', padding: '6px 12px', background: 'transparent',
+          border: 'none', cursor: 'pointer', color: 'var(--text2)',
+          borderRadius: 4, marginBottom: 2
+        }}>
+        
+        <div style={{
+          transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+          transition: 'transform 0.2s ease', display: 'flex'
+        }}>
+          <Icons.ChevronRight size={13} strokeWidth={2} />
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          {name}
+        </span>
+        <span style={{
+          marginLeft: 4, fontSize: 10, color: 'var(--text3)',
+          background: 'var(--surface3)', padding: '1px 6px', borderRadius: 10,
+          border: '1px solid var(--border)'
+        }}>
+          {endpoints.length}
+        </span>
+      </button>
+      {open &&
+      <div style={{ paddingLeft: 8 }}>
+          {endpoints.map((ep, i) =>
+        <EndpointRow
+          key={ep.id}
+          ep={ep}
+          idx={baseIdx + i}
+          selected={selectedEp}
+          onSelect={onSelect}
+          onTry={onTry}
+          serverRunning={serverRunning} />
+
+        )}
+        </div>
+      }
+    </div>);
+
+}
+
+// ─── Response Panel ────────────────────────────────────────────────────────────
+function ResponsePanel({ response, endpoint, loading, onRegenerate, accentColor }) {
+  const [copied, setCopied] = useState(false);
+  const bodyStr = response?.body != null ? JSON.stringify(response.body, null, 2) : '';
+
+  const copy = () => {
+    if (!bodyStr) return;
+    navigator.clipboard.writeText(bodyStr).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  if (!endpoint) {
+    return (
+      <div style={{
+        flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start',
+        padding: '20px 16px', gap: 10, color: 'var(--text3)'
+      }}>
+        <Icons.MousePointerClick size={13} strokeWidth={1.5} />
+        <span style={{ fontSize: 12 }}>Select an endpoint to preview its response</span>
+      </div>);
+
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Response header */}
+      <div style={{
+        padding: '12px 16px',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexShrink: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <MethodBadge method={endpoint.method} />
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}>
+            {endpoint.path}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {response &&
+          <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Icons.Clock size={11} color="var(--text3)" strokeWidth={1.5} />
+                <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
+                  {response.ms}ms
+                </span>
+              </div>
+              <div style={{
+              padding: '2px 8px', borderRadius: 3, fontSize: 11, fontWeight: 600,
+              fontFamily: 'var(--mono)',
+              background: response.status < 300 ? 'rgba(61,214,140,0.1)' : 'rgba(240,88,77,0.1)',
+              color: response.status < 300 ? 'var(--green)' : 'var(--red)',
+              border: `1px solid ${response.status < 300 ? 'rgba(61,214,140,0.25)' : 'rgba(240,88,77,0.25)'}`
+            }}>
+                {response.status}
+              </div>
+              <button
+              onClick={copy}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                padding: '4px 8px', borderRadius: 4,
+                border: '1px solid var(--border2)', background: 'transparent',
+                color: copied ? 'var(--green)' : 'var(--text3)',
+                fontSize: 11, cursor: 'pointer', transition: 'color 0.15s ease'
+              }}>
+              
+                {copied ? <Icons.Check size={11} strokeWidth={2} /> : <Icons.Copy size={11} strokeWidth={1.5} />}
+              </button>
+              <button
+              onClick={onRegenerate}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                padding: '4px 8px', borderRadius: 4,
+                border: '1px solid var(--border2)', background: 'transparent',
+                color: 'var(--text3)', fontSize: 11, cursor: 'pointer'
+              }}>
+              
+                <Icons.RefreshCw size={11} strokeWidth={1.5} />
+              </button>
+            </>
+          }
+        </div>
+      </div>
+
+      {/* JSON body */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '14px 16px' }}>
+        {loading ?
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text3)', fontSize: 12 }}>
+            <Icons.Loader size={14} strokeWidth={1.5} style={{ animation: 'spin 1s linear infinite' }} />
+            Fetching response…
+          </div> :
+        response?.body != null ?
+        <pre
+          key={response.ts}
+          className="response-fade"
+          style={{
+            fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.65,
+            color: 'var(--text2)', whiteSpace: 'pre-wrap', wordBreak: 'break-all'
+          }}
+          dangerouslySetInnerHTML={{ __html: highlightJson(bodyStr) }} /> :
+
+
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text3)' }}>
+            204 No Content
+          </span>
+        }
+      </div>
+    </div>);
+
+}
+
+// ─── Log Strip ────────────────────────────────────────────────────────────────
+function LogStrip({ logs, open, onToggle }) {
+  const bottomRef = useRef(null);
+  useEffect(() => {
+    if (bottomRef.current && open) {
+      bottomRef.current.scrollTop = bottomRef.current.scrollHeight;
+    }
+  }, [logs, open]);
+
+  return (
+    <div style={{
+      borderTop: '1px solid var(--border)',
+      background: 'var(--surface)',
+      flexShrink: 0,
+      transition: 'height 0.2s ease',
+      height: open ? 130 : 32,
+      display: 'flex', flexDirection: 'column'
+    }}>
+      {/* Toggle bar */}
+      <button
+        onClick={onToggle}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between',
+          padding: '0 16px', height: 32, background: 'transparent',
+          border: 'none', borderBottom: open ? '1px solid var(--border)' : 'none',
+          cursor: 'pointer', width: '100%', flexShrink: 0
+        }}>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: logs.length > 0 ? 'var(--amber)' : 'var(--text3)', animation: logs.length ? 'pulse-amber 2s infinite' : 'none' }} />
+          <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Server Logs
+          </span>
+          <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
+            {logs.length > 0 ? `${logs.length} request${logs.length !== 1 ? 's' : ''}` : 'idle'}
+          </span>
+        </div>
+        {open ? <Icons.ChevronDown size={12} strokeWidth={2} color="var(--text3)" /> : <Icons.ChevronUp size={12} strokeWidth={2} color="var(--text3)" />}
+      </button>
+
+      {/* Log entries */}
+      {open &&
+      <div ref={bottomRef} style={{ flex: 1, overflow: 'auto', padding: '6px 16px' }}>
+          {logs.length === 0 ?
+        <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text3)', paddingTop: 4 }}>
+              Waiting for requests…
+            </div> :
+        logs.map((l, i) =>
+        <div
+          key={l.id}
+          className="log-entry"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 16,
+            fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text3)',
+            padding: '2px 0', borderBottom: i < logs.length - 1 ? '1px solid rgba(255,255,255,0.03)' : 'none'
+          }}>
+          
+              <span style={{ color: 'var(--text3)', minWidth: 70 }}>{l.time}</span>
+              <MethodBadge method={l.method} />
+              <span style={{ color: 'var(--text2)', flex: 1 }}>{l.path}</span>
+              <span style={{ color: l.status < 300 ? 'var(--green)' : 'var(--red)', minWidth: 30 }}>{l.status}</span>
+              <span style={{ color: 'var(--text3)', minWidth: 48, textAlign: 'right' }}>{l.ms}ms</span>
+            </div>
+        )}
+        </div>
+      }
+    </div>);
+
+}
+
+// ─── Tweaks ───────────────────────────────────────────────────────────────────
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#A78BFA",
+  "density": "comfortable",
+  "port": "3000",
+  "monoSize": "12"
+} /*EDITMODE-END*/;
+
+function TweaksPanel({ open, values, onChange }) {
+  return (
+    <div className={`tweaks-panel ${open ? 'open' : ''}`}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', marginBottom: 14, letterSpacing: '-0.01em' }}>Tweaks</div>
+      <div className="tweak-row">
+        <div className="tweak-label">Accent Color</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {['#F5A623', '#3DD68C', '#4C9EEB', '#A78BFA', '#F0584D'].map((c) =>
+          <div
+            key={c}
+            onClick={() => onChange('accentColor', c)}
+            style={{
+              width: 20, height: 20, borderRadius: '50%', background: c, cursor: 'pointer',
+              border: values.accentColor === c ? `2px solid white` : '2px solid transparent',
+              transition: 'border 0.1s'
+            }} />
+
+          )}
+        </div>
+      </div>
+      <div className="tweak-row">
+        <div className="tweak-label">Density</div>
+        <select className="tweak-select" value={values.density} onChange={(e) => onChange('density', e.target.value)}>
+          <option value="compact">Compact</option>
+          <option value="comfortable">Comfortable</option>
+          <option value="spacious">Spacious</option>
+        </select>
+      </div>
+      <div className="tweak-row">
+        <div className="tweak-label">Mock Port</div>
+        <input className="tweak-input" value={values.port} onChange={(e) => onChange('port', e.target.value)} />
+      </div>
+      <div className="tweak-row">
+        <div className="tweak-label">Mono Font Size (px)</div>
+        <input className="tweak-input" type="number" min="10" max="16" value={values.monoSize} onChange={(e) => onChange('monoSize', e.target.value)} />
+      </div>
+    </div>);
+
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+function App() {
+  const [tweaks, setTweaks] = useState(TWEAK_DEFAULTS);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+
+  const [serverRunning, setServerRunning] = useState(false);
+  const [specLoaded, setSpecLoaded] = useState(false);
+  const [endpoints, setEndpoints] = useState([]);
+  const [selectedEp, setSelectedEp] = useState(null);
+  const [response, setResponse] = useState(null);
+  const [loadingResp, setLoadingResp] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [logOpen, setLogOpen] = useState(true);
+  const [validOpen, setValidOpen] = useState(true);
+  const [specKey, setSpecKey] = useState(0);
+
+  // Tweaks wiring
+  useEffect(() => {
+    window.addEventListener('message', (e) => {
+      if (e.data?.type === '__activate_edit_mode') setTweaksOpen(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweaksOpen(false);
+    });
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+  }, []);
+
+  const handleTweak = (key, val) => {
+    setTweaks((prev) => {
+      const next = { ...prev, [key]: val };
+      window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
+      return next;
+    });
+  };
+
+  const accentColor = tweaks.accentColor;
+  const port = tweaks.port;
+
+  const densityPad = { compact: '6px 12px', comfortable: '9px 16px', spacious: '14px 20px' }[tweaks.density] || '9px 16px';
+
+  const [specEditorOpen, setSpecEditorOpen] = useState(false);
+  const [specContent, setSpecContent] = useState('');
+
+  const DEMO_SPEC_CONTENT = `openapi: 3.0.0
+info:
+  title: Sample API
+  version: 1.0.0
+  description: A sample B2B SaaS API
+paths:
+  /customers:
+    get:
+      summary: List all customers
+      tags: [Customers]
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create a customer
+      tags: [Customers]
+  /orders:
+    get:
+      summary: List all orders
+      tags: [Orders]
+    post:
+      summary: Place an order
+      tags: [Orders]
+  /auth/login:
+    post:
+      summary: Authenticate user
+      tags: [Auth]`;
+
+  const loadDemo = () => {
+    setSpecLoaded(true);
+    setSpecContent(DEMO_SPEC_CONTENT);
+    setEndpoints([]);
+    setSelectedEp(null);
+    setResponse(null);
+    setSpecKey((k) => k + 1);
+    setTimeout(() => setEndpoints(DEMO_ENDPOINTS), 50);
+  };
+
+  const clearSpec = () => {
+    setSpecLoaded(false);
+    setEndpoints([]);
+    setSelectedEp(null);
+    setResponse(null);
+    setLogs([]);
+  };
+
+  const tryEndpoint = useCallback((ep) => {
+    setSelectedEp(ep);
+    setLoadingResp(true);
+    setResponse(null);
+
+    const ms = randBetween(12, 58);
+
+    setTimeout(() => {
+      const mock = MOCK_RESPONSES[ep.id];
+      const r = { ...mock, ms, ts: Date.now() };
+      setResponse(r);
+      setLoadingResp(false);
+
+      // Add to logs
+      const now = new Date();
+      const time = now.toTimeString().slice(0, 8);
+      setLogs((prev) => [...prev.slice(-49), {
+        id: Date.now(), time, method: ep.method, path: ep.path,
+        status: mock.status, ms
+      }]);
+    }, ms + 80);
+  }, []);
+
+  // Group endpoints
+  const groups = endpoints.reduce((acc, ep) => {
+    if (!acc[ep.group]) acc[ep.group] = [];
+    acc[ep.group].push(ep);
+    return acc;
+  }, {});
+
+  // Base index for stagger across groups
+  let baseIdx = 0;
+  const groupEntries = Object.entries(groups).map(([name, eps]) => {
+    const entry = { name, eps, baseIdx };
+    baseIdx += eps.length;
+    return entry;
+  });
+
+  // inject mono size
+  useEffect(() => {
+    document.documentElement.style.setProperty('--mono-size', tweaks.monoSize + 'px');
+  }, [tweaks.monoSize]);
+
+  return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <style>{`
+        .json-key  { color: #2F7FD4; }
+        .json-str  { color: #18A86B; }
+        .json-num  { color: #D97706; }
+        .json-bool { color: #E03E35; }
+        .json-null { color: var(--text3); }
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+      `}</style>
+
+      <Header
+        serverRunning={serverRunning}
+        port={port}
+        onToggleServer={() => setServerRunning((r) => !r)}
+        accentColor={accentColor} />
+      
+
+      <SpecPanel
+        specLoaded={specLoaded}
+        specName={DEMO_SPEC_NAME}
+        specSize={DEMO_SPEC_SIZE}
+        specValid={true}
+        onLoadDemo={loadDemo}
+        onClear={clearSpec}
+        onEdit={() => setSpecEditorOpen(true)}
+        accentColor={accentColor} />
+
+      {/* Spec Editor Modal */}
+      {specEditorOpen && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.3)', backdropFilter:'blur(4px)', zIndex:500, display:'flex', alignItems:'center', justifyContent:'center' }}
+          onClick={() => setSpecEditorOpen(false)}>
+          <div onClick={e => e.stopPropagation()} className="panel-slide"
+            style={{ width:640, background:'var(--surface)', border:'1px solid var(--border2)', borderRadius:12, boxShadow:'0 24px 64px rgba(0,0,0,0.18)', overflow:'hidden' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 20px', borderBottom:'1px solid var(--border)' }}>
+              <div>
+                <div style={{ fontSize:14, fontWeight:600, color:'var(--text)' }}>Edit Spec — {DEMO_SPEC_NAME}</div>
+                <div style={{ fontSize:11, color:'var(--text3)', marginTop:2 }}>Modify your OpenAPI spec and reload</div>
+              </div>
+              <button onClick={() => setSpecEditorOpen(false)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', padding:4 }}>
+                <Icons.XCircle size={16} strokeWidth={1.5}/>
+              </button>
+            </div>
+            <div style={{ padding:'16px 20px' }}>
+              <textarea
+                value={specContent}
+                onChange={e => setSpecContent(e.target.value)}
+                autoFocus
+                style={{ width:'100%', height:320, fontFamily:'var(--mono)', fontSize:11.5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:12, color:'var(--text)', resize:'none', outline:'none', lineHeight:1.6 }}
+              />
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'0 20px 16px' }}>
+              <button onClick={() => setSpecEditorOpen(false)} style={{ padding:'8px 16px', borderRadius:'var(--radius)', border:'1px solid var(--border2)', background:'none', color:'var(--text2)', fontSize:12, cursor:'pointer', fontFamily:'var(--display)' }}>Cancel</button>
+              <button onClick={() => { setSpecEditorOpen(false); setSpecKey(k => k+1); setTimeout(() => setEndpoints(DEMO_ENDPOINTS), 50); }}
+                style={{ padding:'8px 20px', borderRadius:'var(--radius)', border:`1px solid ${accentColor}60`, background:accentColor, color:'#fff', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'var(--display)' }}>
+                Reload Spec
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {specLoaded &&
+      <ValidationPanel
+        open={validOpen}
+        onClose={() => setValidOpen(false)}
+        accentColor={accentColor} />
+      }
+      {specLoaded && !validOpen &&
+      <button
+        onClick={() => setValidOpen(true)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '4px 16px', background: 'var(--surface2)',
+          border: 'none', borderBottom: '1px solid var(--border)',
+          cursor: 'pointer', fontSize: 10, color: 'var(--text3)',
+          fontFamily: 'var(--mono)', letterSpacing: '0.04em', flexShrink: 0
+        }}>
+          <Icons.ChevronDown size={10} strokeWidth={2} />
+          Show validation — {VALIDATION_DATA.errors.length} errors, {VALIDATION_DATA.suggestions.length} suggestions
+        </button>
+      }
+
+      {/* Main content */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Endpoints list */}
+        <div style={{
+          width: specLoaded ? '50%' : '100%',
+          borderRight: specLoaded ? '1px solid var(--border)' : 'none',
+          overflow: 'auto',
+          padding: specLoaded ? '12px 8px' : '0',
+          transition: 'width 0.3s ease'
+        }}>
+          {!specLoaded && (
+            <div style={{
+              height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexDirection: 'column', gap: 16, color: 'var(--text3)',
+            }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: 14,
+                border: '1px solid var(--border2)', background: 'var(--surface)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Icons.FileCode size={24} strokeWidth={1.2} color="var(--text3)" />
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginBottom: 4 }}>No spec loaded</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>Upload an OpenAPI spec to discover endpoints</div>
+              </div>
+            </div>
+          )}
+
+          {specLoaded && groupEntries.map(({ name, eps, baseIdx: bi }) =>
+          <EndpointGroup
+            key={name + specKey}
+            name={name}
+            endpoints={eps}
+            selectedEp={selectedEp}
+            onSelect={setSelectedEp}
+            onTry={tryEndpoint}
+            serverRunning={serverRunning}
+            baseIdx={bi} />
+
+          )}
+        </div>
+
+        {/* Response panel */}
+        {specLoaded &&
+        <div style={{
+          flex: 1, display: 'flex', flexDirection: 'column',
+          background: 'var(--surface)', overflow: 'hidden'
+        }}>
+            <ResponsePanel
+            response={response}
+            endpoint={selectedEp}
+            loading={loadingResp}
+            onRegenerate={() => selectedEp && tryEndpoint(selectedEp)}
+            accentColor={accentColor} />
+          
+          </div>
+        }
+      </div>
+
+      <LogStrip logs={logs} open={logOpen} onToggle={() => setLogOpen((o) => !o)} />
+
+      <TweaksPanel open={tweaksOpen} values={tweaks} onChange={handleTweak} />
+    </div>);
+
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+<template id="__bundler_thumbnail">
+<svg viewBox="0 0 80 56" xmlns="http://www.w3.org/2000/svg">
+  <rect width="80" height="56" fill="#0D0F12"/>
+  <rect x="8" y="8" width="64" height="8" rx="2" fill="#1C2030"/>
+  <rect x="8" y="20" width="20" height="3" rx="1" fill="#F5A623" opacity="0.8"/>
+  <rect x="8" y="26" width="30" height="2" rx="1" fill="#1C2030"/>
+  <rect x="8" y="30" width="25" height="2" rx="1" fill="#1C2030"/>
+  <rect x="8" y="34" width="28" height="2" rx="1" fill="#1C2030"/>
+  <rect x="42" y="20" width="30" height="28" rx="3" fill="#111318"/>
+</svg>
+</template>
+</body>
+</html>
