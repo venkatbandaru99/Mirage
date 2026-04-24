@@ -26,8 +26,9 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logOpen, setLogOpen] = useState(true)
   const [validationResults, setValidationResults] = useState<any>(null)
+  const [showValidation, setShowValidation] = useState(true)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const accentColor = '#F5A623'
+  const accentColor = '#a78bfa'
   const port = 3000
 
   // Initialize session on app load
@@ -40,6 +41,7 @@ function App() {
     setRoutes(parsedRoutes)
     setSpecInfo(info)
     setValidationResults(validation)
+    setShowValidation(true) // Always show validation when new spec is parsed
     console.log('🔍 validationResults state set to:', validation)
     setSelectedEndpoint(null)
     setResponse(null)
@@ -368,10 +370,11 @@ function App() {
       />
 
       {/* Validation Results */}
-      {validationResults && (
+      {validationResults && showValidation && (
         <SimpleValidationPanel 
           validation={validationResults}
           onRevalidate={handleRevalidate}
+          onHide={() => setShowValidation(false)}
         />
       )}
 

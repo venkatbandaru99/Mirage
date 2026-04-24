@@ -3,128 +3,11 @@ import React, { useState } from 'react'
 interface ValidationPanelProps {
   validation: any
   onRevalidate?: () => void
+  onHide?: () => void
 }
 
-const IssueDropdown: React.FC<{
-  title: string
-  count: number
-  issues: any[]
-  color: string
-  bgColor: string
-  borderColor: string
-  open: boolean
-  onToggle: () => void
-  limit?: number
-}> = ({ title, count, issues, color, bgColor, borderColor, open, onToggle, limit }) => {
-
-  if (count === 0) return null
-
-  const displayIssues = limit ? issues.slice(0, limit) : issues
-  const hasMore = limit && issues.length > limit
-
-  return (
-    <div style={{
-      border: `1px solid ${borderColor}`,
-      borderRadius: '6px',
-      overflow: 'hidden'
-    }}>
-      <button
-        onClick={onToggle}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 12px',
-          background: bgColor,
-          border: 'none',
-          cursor: 'pointer',
-          fontSize: '12px',
-          fontWeight: 600,
-          color,
-          fontFamily: 'var(--display)'
-        }}
-      >
-        <span>{title} ({count})</span>
-        <span style={{ 
-          transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-          transition: 'transform 0.2s ease',
-          fontSize: '10px'
-        }}>
-          ▼
-        </span>
-      </button>
-
-      {open && (
-        <div style={{
-          background: 'var(--surface)',
-          maxHeight: '200px',
-          overflowY: 'auto'
-        }}>
-          {displayIssues.map((issue: any, i: number) => (
-            <div
-              key={i}
-              style={{
-                padding: '10px 12px',
-                borderBottom: i < displayIssues.length - 1 || hasMore ? `1px solid ${borderColor}` : 'none'
-              }}
-            >
-              <div style={{
-                fontSize: '11px',
-                fontWeight: 500,
-                marginBottom: '4px',
-                color: 'var(--text)',
-                fontFamily: 'var(--mono)'
-              }}>
-                {issue.message}
-              </div>
-              <div style={{
-                fontSize: '10px',
-                color: 'var(--text3)',
-                lineHeight: 1.4,
-                fontFamily: 'var(--mono)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <span>💡 {issue.suggestion}</span>
-                {issue.lineNumber && (
-                  <span style={{
-                    background: color + '20',
-                    border: `1px solid ${color}40`,
-                    color: color,
-                    padding: '2px 6px',
-                    borderRadius: '3px',
-                    fontSize: '9px',
-                    fontWeight: 600,
-                    fontFamily: 'var(--mono)'
-                  }}>
-                    Line {issue.lineNumber}
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {hasMore && (
-            <div style={{
-              padding: '8px 12px',
-              fontSize: '10px',
-              color: 'var(--text3)',
-              textAlign: 'center',
-              background: 'var(--surface2)'
-            }}>
-              ... and {issues.length - limit!} more {title.toLowerCase()}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const SimpleValidationPanel: React.FC<ValidationPanelProps> = ({ validation, onRevalidate }) => {
-  const [activeDropdown, setActiveDropdown] = useState<'errors' | 'warnings' | 'suggestions' | null>(null)
+const SimpleValidationPanel: React.FC<ValidationPanelProps> = ({ validation, onRevalidate, onHide }) => {
+  const [filter, setFilter] = useState<'errors' | 'warnings' | 'suggestions' | null>(null)
 
   if (!validation) return null
 
@@ -133,263 +16,214 @@ const SimpleValidationPanel: React.FC<ValidationPanelProps> = ({ validation, onR
   const warnings = issues.filter((i: any) => i.severity === 'warning')
   const suggestions = issues.filter((i: any) => i.severity === 'suggestion')
 
+  const score = validation.qualityScore
+  const scoreColor = '#a78bfa'
+
+  const checks = {
+    passed: summary.passedChecks || 0,
+    total: summary.totalChecks || 0
+  }
+
+  // Get filtered items based on current filter
+  const items = filter === 'errors' ? errors :
+               filter === 'warnings' ? warnings :
+               filter === 'suggestions' ? suggestions : []
+
   return (
     <div style={{
-      padding: '20px 24px',
-      background: 'var(--surface)',
-      borderBottom: '1px solid var(--border)',
-      margin: 0,
       flexShrink: 0,
-      boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+      borderBottom: '1px solid var(--border)',
+      background: 'var(--surface2)'
     }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '16px'
-      }}>
-        <h3 style={{
-          fontSize: '14px',
-          fontWeight: 600,
-          color: 'var(--text)',
-          fontFamily: 'var(--display)',
-          margin: 0
-        }}>
-          📊 OpenAPI Validation Results
-        </h3>
-        
-        {onRevalidate && (
-          <button
-            onClick={onRevalidate}
-            style={{
-              padding: '6px 10px',
-              background: 'transparent',
-              border: '1px solid var(--border2)',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '11px',
-              color: 'var(--text3)'
-            }}
-          >
-            🔄 Re-check
-          </button>
-        )}
-      </div>
-
-      {/* Quality Score */}
-      <div style={{
-        background: 'linear-gradient(135deg, var(--surface2), var(--surface3))',
-        borderRadius: 'var(--radius2)',
-        border: '1px solid var(--border2)',
-        padding: '16px 20px',
-        marginBottom: '20px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.06)'
-      }}>
+      <div style={{ padding: '10px 20px' }}>
+        {/* Header */}
         <div style={{
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '8px'
+          justifyContent: 'space-between',
+          marginBottom: '10px'
         }}>
-          <span style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: 3 }}>
-            Quality Score
+          <span style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: 'var(--text)',
+            letterSpacing: '-0.01em'
+          }}>
+            Spec Validation
           </span>
+          
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{
-              fontSize: '18px',
-              fontWeight: 700,
-              color: validation.qualityScore >= 70 ? 'var(--green)' : 
-                     validation.qualityScore >= 50 ? 'var(--amber)' : 'var(--red)',
-              fontFamily: 'var(--display)'
+            {onRevalidate && (
+              <button
+                onClick={onRevalidate}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text3)',
+                  fontSize: 11,
+                  fontFamily: 'var(--display)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}
+              >
+                🔄 Re-check
+              </button>
+            )}
+            {onHide && (
+              <button
+                onClick={onHide}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text3)',
+                  fontSize: 11,
+                  fontFamily: 'var(--display)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}
+              >
+                ↑ Hide
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Quality Score + Stats Row */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'stretch', marginBottom: 10 }}>
+          {/* Compact Quality Score Card */}
+          <div style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            padding: '8px 12px',
+            minWidth: 100
+          }}>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 3 }}>
+              Quality Score
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: scoreColor, lineHeight: 1 }}>
+              {score}<span style={{ fontSize: 12, fontWeight: 400 }}>%</span>
+            </div>
+            <div style={{
+              marginTop: 5,
+              width: '100%',
+              height: 3,
+              background: 'var(--surface3)',
+              borderRadius: 2,
+              overflow: 'hidden'
             }}>
-              {validation.qualityScore}%
-            </span>
-            <span style={{
-              fontSize: '11px',
-              color: 'var(--text3)',
-              fontFamily: 'var(--mono)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em'
-            }}>
-              {validation.qualityScore >= 90 ? 'Excellent' :
-               validation.qualityScore >= 80 ? 'Very Good' :
-               validation.qualityScore >= 70 ? 'Good' :
-               validation.qualityScore >= 60 ? 'Fair' :
-               validation.qualityScore >= 40 ? 'Poor' : 'Needs Work'}
-            </span>
+              <div style={{
+                width: `${score}%`,
+                height: '100%',
+                background: scoreColor,
+                transition: 'width 0.8s'
+              }} />
+            </div>
           </div>
+
+          {/* Stats Chips */}
+          {[
+            { label: 'Errors', count: errors.length, hex: '#E03E35', key: 'errors' as const },
+            { label: 'Warnings', count: warnings.length, hex: '#D97706', key: 'warnings' as const },
+            { label: 'Suggestions', count: suggestions.length, hex: '#2F7FD4', key: 'suggestions' as const },
+            { label: 'Checks', count: `${checks.passed}/${checks.total}`, hex: '#4A5068', key: null }
+          ].map(({ label, count, hex, key }) => (
+            <div
+              key={label}
+              onClick={() => key && count && setFilter(filter === key ? null : key)}
+              style={{
+                flex: 1,
+                textAlign: 'center',
+                background: filter === key ? hex + '18' : 'var(--surface)',
+                border: `1px solid ${filter === key ? hex + '66' : 'var(--border)'}`,
+                borderRadius: 6,
+                padding: '6px 4px',
+                cursor: key && count ? 'pointer' : 'default',
+                opacity: key && !count ? 0.35 : 1,
+                transition: 'all 0.15s',
+                userSelect: 'none'
+              }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 700, color: hex, lineHeight: 1.2 }}>
+                {count}
+              </div>
+              <div style={{
+                fontSize: 9,
+                color: 'var(--text3)',
+                letterSpacing: '0.06em',
+                marginTop: 2
+              }}>
+                {label.toUpperCase()}
+              </div>
+            </div>
+          ))}
         </div>
-        
-        <div style={{
-          marginTop: '5px',
-          width: '100%',
-          height: '3px',
-          background: 'var(--surface3)',
-          borderRadius: '2px',
-          overflow: 'hidden'
-        }}>
+
+        {/* Filtered Issues List */}
+        {items.length > 0 && (
           <div style={{
-            width: `${validation.qualityScore}%`,
-            height: '100%',
-            background: validation.qualityScore >= 70 ? 'var(--green)' : 
-                       validation.qualityScore >= 50 ? 'var(--amber)' : 'var(--red)',
-            transition: 'width 0.8s ease'
-          }} />
-        </div>
+            borderTop: '1px solid var(--border)',
+            paddingTop: 6,
+            maxHeight: 80,
+            overflow: 'auto'
+          }}>
+            {items.map((item: any, i: number) => (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '3px 0',
+                  borderBottom: i < items.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none'
+                }}
+              >
+                {filter === 'errors' && <span style={{ color: 'var(--red)', fontSize: 11 }}>⚠</span>}
+                {filter === 'warnings' && <span style={{ color: 'var(--amber)', fontSize: 11 }}>△</span>}
+                {filter === 'suggestions' && <span style={{ color: 'var(--blue)', fontSize: 11 }}>💡</span>}
+                <span style={{
+                  fontFamily: 'var(--mono)',
+                  fontSize: 10,
+                  color: 'var(--text3)',
+                  minWidth: 160
+                }}>
+                  {item.path || 'spec'}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--text2)', flex: 1 }}>
+                  {item.message}
+                </span>
+                {item.lineNumber && (
+                  <span style={{
+                    fontSize: 9,
+                    color: 'var(--text3)',
+                    background: 'var(--surface3)',
+                    padding: '1px 4px',
+                    borderRadius: 2
+                  }}>
+                    L{item.lineNumber}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* No Issues Message */}
+        {summary.totalIssues === 0 && (
+          <div style={{
+            textAlign: 'center',
+            padding: '16px',
+            color: 'var(--text3)',
+            fontSize: '11px'
+          }}>
+            🎉 No issues found! Your OpenAPI spec looks great.
+          </div>
+        )}
       </div>
-
-      {/* Summary */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '12px',
-        marginBottom: '16px'
-      }}>
-        <button 
-          onClick={() => setActiveDropdown(activeDropdown === 'errors' ? null : 'errors')}
-          style={{
-            textAlign: 'center',
-            background: 'transparent',
-            border: '1px solid var(--border2)',
-            borderRadius: '6px',
-            padding: '8px',
-            cursor: summary.errors > 0 ? 'pointer' : 'default',
-            opacity: summary.errors > 0 ? 1 : 0.5,
-            transition: 'all 0.2s ease'
-          }}
-          disabled={summary.errors === 0}
-        >
-          <div style={{
-            fontSize: '16px',
-            fontWeight: 700,
-            color: summary.errors > 0 ? 'var(--red)' : 'var(--green)'
-          }}>
-            {summary.errors}
-          </div>
-          <div style={{ fontSize: '9px', color: 'var(--text3)' }}>ERRORS</div>
-        </button>
-        
-        <button 
-          onClick={() => setActiveDropdown(activeDropdown === 'warnings' ? null : 'warnings')}
-          style={{
-            textAlign: 'center',
-            background: 'transparent',
-            border: '1px solid var(--border2)',
-            borderRadius: '6px',
-            padding: '8px',
-            cursor: summary.warnings > 0 ? 'pointer' : 'default',
-            opacity: summary.warnings > 0 ? 1 : 0.5,
-            transition: 'all 0.2s ease'
-          }}
-          disabled={summary.warnings === 0}
-        >
-          <div style={{
-            fontSize: '16px',
-            fontWeight: 700,
-            color: summary.warnings > 0 ? 'var(--amber)' : 'var(--green)'
-          }}>
-            {summary.warnings}
-          </div>
-          <div style={{ fontSize: '9px', color: 'var(--text3)' }}>WARNINGS</div>
-        </button>
-        
-        <button 
-          onClick={() => setActiveDropdown(activeDropdown === 'suggestions' ? null : 'suggestions')}
-          style={{
-            textAlign: 'center',
-            background: 'transparent',
-            border: '1px solid var(--border2)',
-            borderRadius: '6px',
-            padding: '8px',
-            cursor: summary.suggestions > 0 ? 'pointer' : 'default',
-            opacity: summary.suggestions > 0 ? 1 : 0.5,
-            transition: 'all 0.2s ease'
-          }}
-          disabled={summary.suggestions === 0}
-        >
-          <div style={{
-            fontSize: '16px',
-            fontWeight: 700,
-            color: 'var(--blue)'
-          }}>
-            {summary.suggestions}
-          </div>
-          <div style={{ fontSize: '9px', color: 'var(--text3)' }}>SUGGESTIONS</div>
-        </button>
-        
-        <div style={{ 
-          textAlign: 'center',
-          border: '1px solid var(--border2)',
-          borderRadius: '6px',
-          padding: '8px'
-        }}>
-          <div style={{
-            fontSize: '16px',
-            fontWeight: 700,
-            color: 'var(--text2)'
-          }}>
-            {summary.passedChecks}/{summary.totalChecks}
-          </div>
-          <div style={{ fontSize: '9px', color: 'var(--text3)' }}>CHECKS</div>
-        </div>
-      </div>
-
-      {/* Single Conditional Dropdown */}
-      {activeDropdown && (
-        <div style={{ marginTop: '8px' }}>
-          {activeDropdown === 'errors' && (
-            <IssueDropdown 
-              title="🚨 Errors"
-              count={errors.length}
-              issues={errors}
-              color="var(--red)"
-              bgColor="rgba(240, 88, 77, 0.1)"
-              borderColor="rgba(240, 88, 77, 0.25)"
-              open={true}
-              onToggle={() => setActiveDropdown(null)}
-            />
-          )}
-
-          {activeDropdown === 'warnings' && (
-            <IssueDropdown 
-              title="⚠️ Warnings"
-              count={warnings.length}
-              issues={warnings}
-              color="var(--amber)"
-              bgColor="rgba(245, 166, 35, 0.1)"
-              borderColor="rgba(245, 166, 35, 0.25)"
-              open={true}
-              onToggle={() => setActiveDropdown(null)}
-            />
-          )}
-
-          {activeDropdown === 'suggestions' && (
-            <IssueDropdown 
-              title="💡 Suggestions"
-              count={suggestions.length}
-              issues={suggestions}
-              color="var(--blue)"
-              bgColor="rgba(47, 127, 212, 0.1)"
-              borderColor="rgba(47, 127, 212, 0.25)"
-              open={true}
-              onToggle={() => setActiveDropdown(null)}
-              limit={10}
-            />
-          )}
-        </div>
-      )}
-
-      {summary.totalIssues === 0 && (
-        <div style={{
-          textAlign: 'center',
-          padding: '24px',
-          color: 'var(--text3)',
-          fontSize: '12px'
-        }}>
-          🎉 No issues found! Your OpenAPI spec looks great.
-        </div>
-      )}
     </div>
   )
 }

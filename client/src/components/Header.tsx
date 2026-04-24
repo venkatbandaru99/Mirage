@@ -33,7 +33,7 @@ const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, ac
           letterSpacing: '-0.03em',
           color: 'var(--text)'
         }}>
-          <span style={{ color: accentColor }}>M</span>irage
+          <span style={{ color: accentColor }}>Mi</span>rage
         </span>
         <span style={{
           fontSize: 11,
