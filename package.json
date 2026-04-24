@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node src/index.js --spec examples/sample-spec.yaml --port ${PORT:-3001}",
     "start:web": "node src/index.js --web --port ${PORT:-3001}",
+    "start:prod": "yarn build && yarn start:web",
     "dev": "node src/index.js --spec examples/sample-spec.yaml --port 3001",
     "dev:web": "concurrently \"yarn dev:server\" \"yarn dev:client\"",
     "dev:server": "node src/index.js --web --port 3001",
