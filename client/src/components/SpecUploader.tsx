@@ -498,7 +498,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
       borderBottom: '1px solid var(--border)',
       background: 'var(--surface)',
       flexShrink: 0
-    }}>
+    }} className="spec-uploader-container">
       <div
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
@@ -515,8 +515,9 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
           cursor: 'default',
           boxShadow: dragging ? '0 4px 20px rgba(245,166,35,0.15)' : '0 1px 3px rgba(0,0,0,0.05)'
         }}
+        className="spec-upload-box"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }} className="spec-upload-content">
           <div style={{
             width: 42,
             height: 42,
@@ -551,7 +552,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10 }} className="spec-upload-buttons">
           <input
             type="file"
             accept=".yaml,.yml,.json"
@@ -580,6 +581,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
               transition: 'all 0.2s ease',
               boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
             }}
+            className="spec-upload-button"
           >
             <Icon name="FolderOpen" size={14} strokeWidth={1.5} />
             Browse
@@ -602,12 +604,13 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
               transition: 'all 0.2s ease',
               boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
             }}
+            className="spec-upload-button"
           >
             <Icon name="Clipboard" size={14} strokeWidth={1.5} />
             Paste
           </button>
 
-          <div style={{ width: 1, height: 24, background: 'var(--border2)', margin: '0 4px' }} />
+          <div style={{ width: 1, height: 24, background: 'var(--border2)', margin: '0 4px' }} className="spec-button-divider" />
 
           <button
             onClick={loadDemo}
@@ -628,6 +631,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
               textTransform: 'uppercase',
               letterSpacing: '0.02em'
             }}
+            className="spec-demo-button"
           >
             {isLoading ? 'Loading...' : 'Load Demo'}
           </button>
