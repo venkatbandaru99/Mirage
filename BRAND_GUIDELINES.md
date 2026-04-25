@@ -17,12 +17,14 @@ The MirageAPI wordmark uses:
 - ✅ Educational content and tutorials
 - ✅ Integration guides and API documentation
 - ✅ Community discussions and support
+- ✅ Commercial use of the software (under MIT license)
+- ✅ Using "MirageAPI" when accurately describing the software
 
 ### Restricted Uses
-- ❌ Using MirageAPI name for derivative products
-- ❌ Creating confusingly similar names
+- ❌ Using MirageAPI name for derivative products without permission
+- ❌ Creating confusingly similar names (e.g., "MirageAPI Pro", "MirageAPI Enterprise")
 - ❌ Using the name to imply official endorsement
-- ❌ Commercial use of the trademark without permission
+- ❌ Modifying the trademark or creating variations without permission
 
 ### Attribution Requirements
 When referencing MirageAPI:
