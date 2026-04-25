@@ -11,6 +11,7 @@ import EndpointExplorer from './components/EndpointExplorer'
 import ResponsePanel from './components/ResponsePanel'
 import LogStrip, { LogEntry } from './components/LogStrip'
 import SimpleValidationPanel from './components/SimpleValidationPanel'
+import Footer from './components/Footer'
 import { ParsedRoute } from './types/api'
 
 interface ResponseData {
@@ -482,6 +483,8 @@ function App() {
         open={logOpen} 
         onToggle={() => setLogOpen(o => !o)} 
       />
+
+      <Footer />
     </div>
   )
 }
