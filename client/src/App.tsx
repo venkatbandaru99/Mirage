@@ -390,16 +390,18 @@ function App() {
         flex: 1, 
         display: 'flex', 
         overflow: 'hidden',
-        background: 'var(--bg)'
-      }}>
+        background: 'var(--bg)',
+        flexDirection: 'row'
+      }} className="main-content">
         {/* Endpoints list */}
         <div style={{
           width: routes.length > 0 ? '48%' : '100%',
           borderRight: routes.length > 0 ? '1px solid var(--border)' : 'none',
           overflow: 'auto',
           background: 'var(--surface)',
-          transition: 'width 0.3s ease'
-        }}>
+          transition: 'width 0.3s ease',
+          minHeight: 0
+        }} className="endpoints-panel">
           {routes.length === 0 && (
             <div style={{
               height: '100%',
@@ -465,8 +467,9 @@ function App() {
             flexDirection: 'column',
             background: 'var(--surface)',
             overflow: 'hidden',
-            marginLeft: '4px'
-          }}>
+            marginLeft: '4px',
+            minHeight: 0
+          }} className="response-panel">
             <ResponsePanel
               selectedEndpoint={selectedEndpoint}
               onTryEndpoint={handleTryEndpoint}

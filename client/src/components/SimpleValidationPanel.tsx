@@ -35,7 +35,7 @@ const SimpleValidationPanel: React.FC<ValidationPanelProps> = ({ validation, onR
       borderBottom: '1px solid var(--border)',
       background: 'var(--surface2)'
     }}>
-      <div style={{ padding: '10px 20px' }}>
+      <div style={{ padding: '10px var(--spacing-lg)' }} className="validation-content">
         {/* Header */}
         <div style={{
           display: 'flex',
@@ -93,15 +93,16 @@ const SimpleValidationPanel: React.FC<ValidationPanelProps> = ({ validation, onR
         </div>
 
         {/* Quality Score + Stats Row */}
-        <div style={{ display: 'flex', gap: 10, alignItems: 'stretch', marginBottom: 10 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'stretch', marginBottom: 10, flexWrap: 'wrap' }} className="stats-row">
           {/* Compact Quality Score Card */}
           <div style={{
             background: 'var(--surface)',
             border: '1px solid var(--border)',
             borderRadius: 6,
             padding: '8px 12px',
-            minWidth: 100
-          }}>
+            minWidth: 100,
+            flex: '1 1 auto'
+          }} className="quality-score-card">
             <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 3 }}>
               Quality Score
             </div>
@@ -136,7 +137,7 @@ const SimpleValidationPanel: React.FC<ValidationPanelProps> = ({ validation, onR
               key={label}
               onClick={() => key && count && setFilter(filter === key ? null : key)}
               style={{
-                flex: 1,
+                flex: '1 1 auto',
                 textAlign: 'center',
                 background: filter === key ? hex + '18' : 'var(--surface)',
                 border: `1px solid ${filter === key ? hex + '66' : 'var(--border)'}`,
@@ -145,8 +146,10 @@ const SimpleValidationPanel: React.FC<ValidationPanelProps> = ({ validation, onR
                 cursor: key && count ? 'pointer' : 'default',
                 opacity: key && !count ? 0.35 : 1,
                 transition: 'all 0.15s',
-                userSelect: 'none'
+                userSelect: 'none',
+                minWidth: 60
               }}
+              className="stat-chip"
             >
               <div style={{ fontSize: 15, fontWeight: 700, color: hex, lineHeight: 1.2 }}>
                 {count}

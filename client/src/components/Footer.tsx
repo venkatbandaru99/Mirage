@@ -12,22 +12,24 @@ const Footer: React.FC = () => {
       flexShrink: 0,
       borderTop: '1px solid var(--border)',
       background: 'var(--surface2)',
-      padding: '8px 24px',
+      padding: '8px var(--spacing-lg)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
       fontSize: 11,
-      color: 'var(--text3)'
-    }}>
+      color: 'var(--text3)',
+      flexWrap: 'wrap',
+      gap: 'var(--spacing-sm)'
+    }} className="footer">
       {/* Left: Copyright */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 auto', minWidth: 0 }} className="footer-left">
         <span>© 2024 Satya Bandaru. All rights reserved.</span>
-        <span style={{ color: 'var(--text3)', fontSize: 10 }}>•</span>
+        <span style={{ color: 'var(--text3)', fontSize: 10 }} className="separator">•</span>
         <span>MirageAPI™</span>
       </div>
 
       {/* Right: Legal Links */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto' }} className="footer-right">
         <a
           href="https://github.com/venkatbandaru99/mirage/blob/main/LICENSE"
           target="_blank"

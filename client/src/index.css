@@ -23,6 +23,18 @@
   --display: 'Space Grotesk', sans-serif;
   --radius: 6px;
   --radius2: 10px;
+  --radius-sm: 4px;
+  
+  /* Responsive spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  
+  /* Breakpoints */
+  --mobile: 768px;
+  --tablet: 1024px;
 }
 
 *, *::before, *::after {
@@ -150,4 +162,99 @@ html, body {
 .json-num { color: #D97706; }
 .json-bool { color: #E03E35; }
 .json-null { color: var(--text3); }
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  .desktop-tagline {
+    display: none !important;
+  }
+  
+  .button-text {
+    display: none;
+  }
+  
+  /* Make mobile layout more compact */
+  body {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  
+  /* Header mobile adjustments */
+  header {
+    padding: 0 var(--spacing-md) !important;
+    min-height: 48px !important;
+  }
+  
+  /* Main content mobile layout */
+  .main-content {
+    flex-direction: column !important;
+    overflow: visible !important;
+  }
+  
+  .endpoints-panel {
+    width: 100% !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border) !important;
+    max-height: 40vh;
+    min-height: 300px;
+  }
+  
+  .response-panel {
+    margin-left: 0 !important;
+    margin-top: 4px !important;
+    flex: 1 1 auto;
+    min-height: 40vh;
+  }
+  
+  /* Validation panel mobile adjustments */
+  .validation-content {
+    padding: var(--spacing-sm) var(--spacing-md) !important;
+  }
+  
+  .stats-row {
+    gap: var(--spacing-xs) !important;
+  }
+  
+  .quality-score-card {
+    min-width: 80px !important;
+    flex: 0 0 auto !important;
+  }
+  
+  .stat-chip {
+    min-width: 50px !important;
+    padding: 4px 2px !important;
+  }
+  
+  /* Footer mobile adjustments */
+  .footer {
+    padding: var(--spacing-sm) var(--spacing-md) !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: var(--spacing-xs) !important;
+  }
+  
+  .footer-left {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 4px !important;
+  }
+  
+  .footer-left .separator {
+    display: none !important;
+  }
+  
+  .footer-right {
+    gap: var(--spacing-sm) !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .desktop-tagline {
+    display: block !important;
+  }
+  
+  .button-text {
+    display: inline;
+  }
+}
 

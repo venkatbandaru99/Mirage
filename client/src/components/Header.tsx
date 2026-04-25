@@ -23,15 +23,23 @@ const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, ac
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: '0 24px',
-      height: 56,
+      padding: '0 var(--spacing-lg)',
+      minHeight: 56,
       borderBottom: '1px solid var(--border)',
       background: 'linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(244,245,247,0.9) 100%)',
       backdropFilter: 'blur(12px)',
-      flexShrink: 0
+      flexShrink: 0,
+      flexWrap: 'wrap',
+      gap: 'var(--spacing-sm)'
     }}>
       {/* Left: wordmark */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'baseline', 
+        gap: 10,
+        minWidth: 0,
+        flex: '1 1 auto'
+      }}>
         <span style={{
           fontFamily: 'var(--display)',
           fontWeight: 700,
@@ -46,14 +54,21 @@ const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, ac
           color: 'var(--text3)',
           fontWeight: 400,
           letterSpacing: '0.01em',
-          paddingLeft: 2
-        }}>
+          paddingLeft: 2,
+          display: 'none'
+        }} className="desktop-tagline">
           Spin up mock APIs from spec. Instantly.
         </span>
       </div>
 
       {/* Right: status + controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 'var(--spacing-md)',
+        flex: '0 0 auto',
+        flexWrap: 'wrap'
+      }}>
         {/* Session indicator */}
         {sessionId && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -102,6 +117,7 @@ const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, ac
             alignItems: 'center',
             gap: 7,
             padding: '7px 16px',
+            minHeight: 44,
             borderRadius: 'var(--radius)',
             border: `1px solid ${serverRunning ? 'rgba(240,88,77,0.4)' : accentColor + '80'}`,
             background: serverRunning
@@ -113,18 +129,19 @@ const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, ac
             cursor: 'pointer',
             transition: 'all 0.15s ease',
             fontFamily: 'var(--display)',
-            letterSpacing: '0.01em'
+            letterSpacing: '0.01em',
+            whiteSpace: 'nowrap'
           }}
         >
           {serverRunning ? (
             <>
               <Icon name="Square" size={13} strokeWidth={2.5} style={{ marginTop: 0 }} />
-              Stop Server
+              <span className="button-text">Stop Server</span>
             </>
           ) : (
             <>
               <Icon name="Play" size={13} strokeWidth={2.5} style={{ marginTop: 0 }} />
-              Start Server
+              <span className="button-text">Start Server</span>
             </>
           )}
         </button>
