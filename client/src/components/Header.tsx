@@ -1,3 +1,9 @@
+/**
+ * MirageAPI - OpenAPI Mock Server
+ * Copyright (c) 2024 Satya Bandaru. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
+
 import React, { useState } from 'react'
 import Icon from './Icon'
 

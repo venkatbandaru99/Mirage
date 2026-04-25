@@ -1,3 +1,9 @@
+/**
+ * MirageAPI - OpenAPI Mock Server
+ * Copyright (c) 2024 Satya Bandaru. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
+
 const express = require('express');
 const session = require('express-session');
 const path = require('path');

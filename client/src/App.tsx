@@ -1,3 +1,9 @@
+/**
+ * MirageAPI - OpenAPI Mock Server
+ * Copyright (c) 2024 Satya Bandaru. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
+
 import React, { useState, useEffect } from 'react'
 import Header from './components/Header'
 import SpecUploader from './components/SpecUploader'

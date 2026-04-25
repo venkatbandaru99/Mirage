@@ -1,6 +1,8 @@
-# 🔮 Mirage - OpenAPI Mock Server
+# 🔮 MirageAPI - OpenAPI Mock Server
 
 A developer productivity tool that accepts an OpenAPI spec and spins up a fully functional local mock server with realistic constraint-aware dummy data.
+
+**Currently Free to Use** - MirageAPI is available at no cost to the developer community.
 
 ## 🚀 Quick Start
 
@@ -92,3 +94,21 @@ curl -X POST http://localhost:3001/customers \
 4. Deploy automatically
 
 Railway will detect the `yarn.lock` and use Yarn automatically.
+
+## 📜 License
+
+MirageAPI is licensed under the [MIT License](LICENSE).
+
+**Copyright (c) 2024 Satya Bandaru. All rights reserved.**
+
+### Open Source License
+- ✅ Free to use, modify, and distribute
+- ✅ Commercial use permitted
+- ✅ Attribution required (see LICENSE)
+- ✅ Subject to MIT License terms
+
+### Contributing
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Trademark Notice
+"MirageAPI" is a trademark of Satya Bandaru. The open-source license does not grant rights to use the trademark without permission.
