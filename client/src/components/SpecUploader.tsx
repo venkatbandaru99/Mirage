@@ -38,6 +38,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ spec, type }),
+        credentials: 'include'
       })
 
       const parseData: ParseSpecResponse | ApiError = await parseResponse.json()
@@ -53,7 +54,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
       setOriginalSpec(spec)
       
       // Get the routes from the API
-      const routesResponse = await fetch('/api/routes')
+      const routesResponse = await fetch('/api/routes', { credentials: 'include' })
       const routesData = await routesResponse.json()
       
       // Add groups based on the path structure
@@ -120,7 +121,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
     
     try {
       // Load the actual sample spec from the examples folder
-      const response = await fetch('/examples/sample-spec.yaml')
+      const response = await fetch('/examples/sample-spec.yaml', { credentials: 'include' })
       const sampleSpec = await response.text()
       
       // Parse the spec using the backend API
@@ -130,6 +131,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ spec: sampleSpec, type: 'yaml' }),
+        credentials: 'include'
       })
 
       const parseData: ParseSpecResponse | ApiError = await parseResponse.json()
@@ -141,7 +143,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
       const result = parseData as ParseSpecResponse
       
       // Get the routes from the API
-      const routesResponse = await fetch('/api/routes')
+      const routesResponse = await fetch('/api/routes', { credentials: 'include' })
       const routesData = await routesResponse.json()
       
       // Add groups based on the path structure

@@ -62,9 +62,10 @@ class MockServer {
       const timestamp = new Date().toISOString();
       console.log(`[${timestamp}] ${req.method} ${req.path}`);
       
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
       
       if (req.method === 'OPTIONS') {
         return res.status(200).end();
