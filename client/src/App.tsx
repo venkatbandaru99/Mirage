@@ -39,7 +39,7 @@ function App() {
   const [apiDescription, setApiDescription] = useState('')
   const [isGeneratingAI, setIsGeneratingAI] = useState(false)
   const accentColor = '#a78bfa'
-  const port = 3000
+  const port = 3001
 
   // Initialize session on app load
   useEffect(() => {
@@ -226,16 +226,24 @@ function App() {
     
     try {
       // Make real HTTP request to the backend mock server
-      const response = await fetch(endpoint.path, {
+      const mockServerUrl = `http://localhost:${port}${endpoint.path}`
+      console.log(`🔗 Making request to: ${endpoint.method} ${mockServerUrl}`)
+      
+      const requestConfig: RequestInit = {
         method: endpoint.method,
         headers: {
           'Content-Type': 'application/json',
-        },
-        // Add sample request body for POST requests
-        ...(endpoint.method === 'POST' && {
-          body: JSON.stringify(getSampleRequestBody(endpoint))
-        })
-      })
+        }
+      }
+
+      // Add sample request body for POST/PUT/PATCH requests
+      if (['POST', 'PUT', 'PATCH'].includes(endpoint.method)) {
+        const sampleBody = getSampleRequestBody(endpoint)
+        console.log('📤 Request body:', sampleBody)
+        requestConfig.body = JSON.stringify(sampleBody)
+      }
+
+      const response = await fetch(mockServerUrl, requestConfig)
 
       const responseTime = Date.now() - startTime
       let responseBody = null
@@ -269,12 +277,15 @@ function App() {
       setLogs((prev) => [...prev.slice(-49), newLog]) // Keep last 50 logs
     } catch (err) {
       const responseTime = Date.now() - startTime
+      console.error('🚨 Endpoint request failed:', err)
       
       setResponse({
         status: 500,
         body: { 
           error: 'Network Error', 
-          message: err instanceof Error ? err.message : 'Failed to connect to server' 
+          message: err instanceof Error ? err.message : 'Failed to connect to mock server',
+          endpoint: `${endpoint.method} ${endpoint.path}`,
+          mockServerUrl: `http://localhost:${port}${endpoint.path}`
         },
         ms: responseTime,
         ts: Date.now()
