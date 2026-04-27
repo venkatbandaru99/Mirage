@@ -12,6 +12,7 @@ import ResponsePanel from './components/ResponsePanel'
 import LogStrip, { LogEntry } from './components/LogStrip'
 import SimpleValidationPanel from './components/SimpleValidationPanel'
 import Footer from './components/Footer'
+import APICreationHub from './components/APICreationHub'
 import { ParsedRoute } from './types/api'
 
 interface ResponseData {
@@ -350,6 +351,48 @@ function App() {
     }
   }
 
+  const handleSpecGenerated = async (spec: string, type: 'yaml' | 'json') => {
+    console.log('🤖 AI Generated spec:', { length: spec.length, type })
+    setIsLoading(true)
+    
+    try {
+      // Parse the generated spec using the same flow as SpecUploader
+      const parseResponse = await fetch('/api/parse-spec', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ spec, type }),
+      })
+
+      const parseData = await parseResponse.json()
+
+      if (!parseResponse.ok) {
+        throw new Error(parseData.message || 'Failed to parse generated spec')
+      }
+      
+      // Get the routes from the API
+      const routesResponse = await fetch('/api/routes')
+      const routesData = await routesResponse.json()
+      
+      // Add groups based on the path structure
+      const routesWithGroups = routesData.routes.map((route: ParsedRoute, index: number) => ({
+        ...route,
+        id: index + 1,
+        group: route.path.startsWith('/customers') ? 'Customers' : 
+               route.path.startsWith('/orders') ? 'Orders' : 
+               route.path.startsWith('/users') ? 'Users' : 'API'
+      }))
+      
+      handleSpecParsed(routesWithGroups, parseData.info, parseData.validation)
+      
+    } catch (err) {
+      console.error('Failed to parse generated spec:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div style={{ 
       height: '100vh', 
@@ -403,48 +446,10 @@ function App() {
           minHeight: 0
         }} className="endpoints-panel">
           {routes.length === 0 && (
-            <div style={{
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexDirection: 'column',
-              gap: 20,
-              color: 'var(--text3)',
-              padding: '40px 20px'
-            }}>
-              <div style={{
-                width: 80,
-                height: 80,
-                borderRadius: 20,
-                border: '2px dashed var(--border2)',
-                background: 'var(--surface2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 32
-              }}>
-                📄
-              </div>
-              <div style={{ textAlign: 'center', maxWidth: 320 }}>
-                <div style={{ 
-                  fontSize: 16, 
-                  fontWeight: 600,
-                  color: 'var(--text2)', 
-                  marginBottom: 8,
-                  fontFamily: 'var(--display)'
-                }}>
-                  No spec loaded
-                </div>
-                <div style={{ 
-                  fontSize: 13, 
-                  color: 'var(--text3)',
-                  lineHeight: 1.5
-                }}>
-                  Upload an OpenAPI spec to discover endpoints and start testing your API
-                </div>
-              </div>
-            </div>
+            <APICreationHub 
+              accentColor={accentColor}
+              onSpecGenerated={handleSpecGenerated}
+            />
           )}
 
           {routes.length > 0 && (

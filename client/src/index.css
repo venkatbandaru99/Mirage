@@ -298,6 +298,23 @@ html, body {
   .spec-upload-content div:last-child {
     font-size: 11px !important;
   }
+  
+  /* API Creation Hub mobile adjustments */
+  .api-creation-tabs {
+    flex-wrap: wrap !important;
+    padding: 0 var(--spacing-sm) !important;
+  }
+  
+  .tab-button {
+    flex: 1 1 auto !important;
+    justify-content: center !important;
+    padding: var(--spacing-sm) var(--spacing-xs) !important;
+    min-width: 0 !important;
+  }
+  
+  .tab-label {
+    font-size: 11px !important;
+  }
 }
 
 @media (min-width: 769px) {
