@@ -12,7 +12,6 @@ import ResponsePanel from './components/ResponsePanel'
 import LogStrip, { LogEntry } from './components/LogStrip'
 import SimpleValidationPanel from './components/SimpleValidationPanel'
 import Footer from './components/Footer'
-import APICreationHub from './components/APICreationHub'
 import { ParsedRoute } from './types/api'
 
 interface ResponseData {
@@ -36,6 +35,9 @@ function App() {
   const [validationResults, setValidationResults] = useState<any>(null)
   const [showValidation, setShowValidation] = useState(true)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [showAIInterface, setShowAIInterface] = useState(true)
+  const [apiDescription, setApiDescription] = useState('')
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false)
   const accentColor = '#a78bfa'
   const port = 3000
 
@@ -50,6 +52,7 @@ function App() {
     setSpecInfo(info)
     setValidationResults(validation)
     setShowValidation(true) // Always show validation when new spec is parsed
+    setShowAIInterface(false) // Hide AI interface when spec is loaded
     console.log('🔍 validationResults state set to:', validation)
     setSelectedEndpoint(null)
     setResponse(null)
@@ -351,18 +354,23 @@ function App() {
     }
   }
 
-  const handleSpecGenerated = async (spec: string, type: 'yaml' | 'json') => {
-    console.log('🤖 AI Generated spec:', { length: spec.length, type })
-    setIsLoading(true)
+  const handleAIGenerate = async () => {
+    if (!apiDescription.trim()) return
+    
+    setIsGeneratingAI(true)
     
     try {
+      // TODO: Phase 2 - Replace with actual AI generation
+      // For now, generate a simple template based on description
+      const generatedSpec = generateSimpleSpec(apiDescription)
+      
       // Parse the generated spec using the same flow as SpecUploader
       const parseResponse = await fetch('/api/parse-spec', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ spec, type }),
+        body: JSON.stringify({ spec: generatedSpec, type: 'yaml' }),
       })
 
       const parseData = await parseResponse.json()
@@ -387,10 +395,59 @@ function App() {
       handleSpecParsed(routesWithGroups, parseData.info, parseData.validation)
       
     } catch (err) {
-      console.error('Failed to parse generated spec:', err)
+      console.error('Failed to generate AI spec:', err)
     } finally {
-      setIsLoading(false)
+      setIsGeneratingAI(false)
     }
+  }
+
+  // Temporary template generation - will be replaced with AI in Phase 2
+  const generateSimpleSpec = (description: string): string => {
+    const timestamp = new Date().toISOString()
+    
+    return `openapi: 3.0.0
+info:
+  title: Generated API
+  version: 1.0.0
+  description: ${description}
+  
+servers:
+  - url: http://localhost:3001
+    description: Local development server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    example: "${timestamp}"
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        code:
+          type: integer`
+  }
+
+  const handleShowAIInterface = () => {
+    setShowAIInterface(true)
+    setApiDescription('')
   }
 
   return (
@@ -417,6 +474,7 @@ function App() {
         specInfo={specInfo}
         routes={routes}
         accentColor={accentColor}
+        onShowAIInterface={handleShowAIInterface}
       />
 
       {/* Validation Results */}
@@ -445,11 +503,151 @@ function App() {
           transition: 'width 0.3s ease',
           minHeight: 0
         }} className="endpoints-panel">
-          {routes.length === 0 && (
-            <APICreationHub 
-              accentColor={accentColor}
-              onSpecGenerated={handleSpecGenerated}
-            />
+          {routes.length === 0 && showAIInterface && (
+            <div style={{
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'column',
+              padding: '40px 20px'
+            }}>
+              <div style={{ textAlign: 'center', marginBottom: 32, maxWidth: 500 }}>
+                <div style={{ 
+                  fontSize: 18, 
+                  fontWeight: 600,
+                  color: 'var(--text2)', 
+                  marginBottom: 8,
+                  fontFamily: 'var(--display)'
+                }}>
+                  Describe Your API
+                </div>
+                <div style={{ 
+                  fontSize: 14, 
+                  color: 'var(--text3)',
+                  lineHeight: 1.5
+                }}>
+                  Tell me what your API should do, and I'll generate the OpenAPI specification
+                </div>
+              </div>
+
+              <div style={{ width: '100%', maxWidth: 500 }}>
+                <textarea
+                  value={apiDescription}
+                  onChange={(e) => setApiDescription(e.target.value)}
+                  placeholder="Example: I need a user management API with registration, login, user profiles, and password reset functionality..."
+                  style={{
+                    width: '100%',
+                    minHeight: 120,
+                    padding: '16px',
+                    border: `1px solid ${apiDescription ? accentColor : 'var(--border)'}`,
+                    borderRadius: 'var(--radius)',
+                    background: 'var(--surface)',
+                    color: 'var(--text)',
+                    fontSize: 14,
+                    fontFamily: 'var(--display)',
+                    lineHeight: 1.5,
+                    resize: 'vertical',
+                    outline: 'none',
+                    transition: 'border-color 0.2s ease'
+                  }}
+                />
+                
+                <button
+                  onClick={handleAIGenerate}
+                  disabled={!apiDescription.trim() || isGeneratingAI}
+                  style={{
+                    width: '100%',
+                    marginTop: 16,
+                    padding: '12px 24px',
+                    borderRadius: 'var(--radius)',
+                    border: `1px solid ${accentColor}`,
+                    background: accentColor,
+                    color: 'white',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: !apiDescription.trim() || isGeneratingAI ? 'not-allowed' : 'pointer',
+                    fontFamily: 'var(--display)',
+                    opacity: !apiDescription.trim() || isGeneratingAI ? 0.5 : 1,
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8
+                  }}
+                >
+                  {isGeneratingAI ? (
+                    <>
+                      <div style={{
+                        width: 16,
+                        height: 16,
+                        border: '2px solid rgba(255,255,255,0.3)',
+                        borderTop: '2px solid white',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite'
+                      }} />
+                      Generating...
+                    </>
+                  ) : (
+                    'Generate API Specification'
+                  )}
+                </button>
+
+                <div style={{ 
+                  marginTop: 16, 
+                  fontSize: 12, 
+                  color: 'var(--text3)', 
+                  textAlign: 'center' 
+                }}>
+                  🔒 All processing happens locally in your browser
+                </div>
+              </div>
+            </div>
+          )}
+
+          {routes.length === 0 && !showAIInterface && (
+            <div style={{
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'column',
+              gap: 20,
+              color: 'var(--text3)',
+              padding: '40px 20px'
+            }}>
+              <div style={{
+                width: 80,
+                height: 80,
+                borderRadius: 20,
+                border: '2px dashed var(--border2)',
+                background: 'var(--surface2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 32
+              }}>
+                📄
+              </div>
+              <div style={{ textAlign: 'center', maxWidth: 320 }}>
+                <div style={{ 
+                  fontSize: 16, 
+                  fontWeight: 600,
+                  color: 'var(--text2)', 
+                  marginBottom: 8,
+                  fontFamily: 'var(--display)'
+                }}>
+                  No spec loaded
+                </div>
+                <div style={{ 
+                  fontSize: 13, 
+                  color: 'var(--text3)',
+                  lineHeight: 1.5
+                }}>
+                  Upload an OpenAPI spec to discover endpoints and start testing your API
+                </div>
+              </div>
+            </div>
           )}
 
           {routes.length > 0 && (

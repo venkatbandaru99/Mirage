@@ -9,6 +9,7 @@ interface SpecUploaderProps {
   specInfo: any
   routes: ParsedRoute[]
   accentColor: string
+  onShowAIInterface?: () => void
 }
 
 const SpecUploader: React.FC<SpecUploaderProps> = ({ 
@@ -17,7 +18,8 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
   setIsLoading, 
   specInfo, 
   routes, 
-  accentColor 
+  accentColor,
+  onShowAIInterface
 }) => {
   const [dragging, setDragging] = useState(false)
   const [showPasteInput, setShowPasteInput] = useState(false)
@@ -553,6 +555,30 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10 }} className="spec-upload-buttons">
+          {onShowAIInterface && (
+            <button
+              onClick={onShowAIInterface}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 16px',
+                borderRadius: 'var(--radius)',
+                border: `1px solid ${accentColor}30`,
+                background: `linear-gradient(135deg, ${accentColor}12, ${accentColor}08)`,
+                color: accentColor,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'var(--display)',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+              }}
+              className="spec-upload-button"
+            >
+              Generate with AI
+            </button>
+          )}
           <input
             type="file"
             accept=".yaml,.yml,.json"
