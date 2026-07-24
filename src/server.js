@@ -6,6 +6,7 @@
 
 const express = require('express');
 const session = require('express-session');
+const crypto = require('crypto');
 const path = require('path');
 const DataGenerator = require('./generator');
 const SpecParser = require('./parser');
@@ -21,9 +22,21 @@ class MockServer {
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
     
-    // Session middleware for multi-user support
+    // Session middleware for multi-user support.
+    // --web mode is the one exposed publicly (e.g. via Railway), so it must not
+    // fall back to a hardcoded secret. Plain CLI mode generates a per-process
+    // random secret instead of requiring env setup for the simple local flow -
+    // sessions don't need to survive a restart since the server is stateless.
+    if (this.webMode && !process.env.SESSION_SECRET) {
+      throw new Error(
+        'SESSION_SECRET environment variable is required in --web mode. Set it to a random secret string, e.g.:\n' +
+        '  SESSION_SECRET=$(openssl rand -hex 32) yarn start:web'
+      );
+    }
+    const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
     this.app.use(session({
-      secret: process.env.SESSION_SECRET || 'mirage-mock-server-secret',
+      secret: sessionSecret,
       resave: false,
       saveUninitialized: true,
       cookie: {
