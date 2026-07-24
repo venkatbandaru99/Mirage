@@ -47,3 +47,7 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# curl cookie jars
+cookies.txt
+*.cookie
