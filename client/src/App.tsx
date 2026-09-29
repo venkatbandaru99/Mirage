@@ -386,7 +386,7 @@ function App() {
       )}
 
       {/* Main content */}
-      <div style={{ 
+      <main style={{ 
         flex: 1, 
         display: 'flex', 
         overflow: 'hidden',
@@ -479,7 +479,7 @@ function App() {
             />
           </div>
         )}
-      </div>
+      </main>
 
       <LogStrip 
         logs={logs} 

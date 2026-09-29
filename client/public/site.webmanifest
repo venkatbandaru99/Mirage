@@ -1,0 +1,13 @@
+{
+  "name": "MirageAPI — OpenAPI Mock Server",
+  "short_name": "MirageAPI",
+  "description": "Drop in an OpenAPI spec and get a fully functional mock server with realistic, constraint-aware dummy data — instantly.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F5F7",
+  "theme_color": "#14161E",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
