@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MirageAPI App — Mock Your OpenAPI Spec Online</title>
+    <meta name="description" content="Upload or paste an OpenAPI spec and test a live mock server in your browser. Every endpoint returns fresh, realistic, constraint-aware data." />
+    <link rel="canonical" href="https://mirageapi.com/app/" />
+
+    <!-- Icons & PWA -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#14161E" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="MirageAPI" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="MirageAPI App — Mock Your OpenAPI Spec Online" />
+    <meta property="og:description" content="Upload or paste an OpenAPI spec and test a live mock server in your browser." />
+    <meta property="og:url" content="https://mirageapi.com/app/" />
+    <meta property="og:image" content="https://mirageapi.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="MirageAPI — Instant mock servers from any OpenAPI spec" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="MirageAPI App — Mock Your OpenAPI Spec Online" />
+    <meta name="twitter:description" content="Upload or paste an OpenAPI spec and test a live mock server in your browser." />
+    <meta name="twitter:image" content="https://mirageapi.com/og-image.png" />
+    <meta name="twitter:image:alt" content="MirageAPI — Instant mock servers from any OpenAPI spec" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <!--
+      Fallback content for crawlers and link previewers that don't run
+      JavaScript. React's createRoot().render() replaces it on mount.
+    -->
+    <div id="root">
+      <main style="max-width:720px;margin:48px auto;padding:0 16px;font-family:system-ui,sans-serif;line-height:1.5">
+        <h1>MirageAPI App</h1>
+        <p>
+          Upload or paste an OpenAPI 2.0, 3.0 or 3.1 spec (JSON or YAML), start the mock server and
+          call any endpoint to get fresh, realistic data on every request.
+        </p>
+        <p><a href="/">About MirageAPI</a> · <a href="/docs/">Documentation</a></p>
+      </main>
+    </div>
+    <noscript>MirageAPI needs JavaScript enabled to run the interactive mock server.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

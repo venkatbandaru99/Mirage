@@ -31,6 +31,20 @@ const Footer: React.FC = () => {
       {/* Right: Legal Links */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto' }} className="footer-right">
         <a
+          href="/docs/"
+          style={{
+            color: 'var(--text3)',
+            textDecoration: 'none',
+            fontSize: 11,
+            transition: 'color 0.15s ease'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text2)'}
+          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text3)'}
+        >
+          Docs
+        </a>
+        <span style={{ color: 'var(--border2)', fontSize: 10 }}>•</span>
+        <a
           href="https://github.com/venkatbandaru99/mirage/blob/main/LICENSE"
           target="_blank"
           rel="noopener noreferrer"
