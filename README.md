@@ -13,7 +13,9 @@ Drop in an OpenAPI or Swagger file and every endpoint is live in seconds, return
 
 [**Launch the app**](https://mirageapi.com/app/) · [Documentation](https://mirageapi.com/docs/) · [Guides](https://mirageapi.com/guides/) · [Compare](https://mirageapi.com/compare/)
 
-<img src="docs/images/app-screenshot.png" alt="MirageAPI app: endpoints from the sample spec on the left, a generated JSON response on the right" width="900" />
+<img src="docs/images/app-screenshot.png" alt="MirageAPI app: spec quality report at the top, endpoints from the sample spec on the left, a generated JSON response on the right" width="900" />
+
+<sub>The demo spec intentionally contains issues so you can see the spec quality report in action.</sub>
 
 </div>
 
@@ -24,7 +26,7 @@ You're building against an API that doesn't exist yet, or one you can't reach fr
 MirageAPI treats your OpenAPI spec as the source of truth:
 
 - **Zero setup:** upload or paste a spec in the browser and click Start Server.
-- **Realistic, schema-valid data:** UUIDs are UUIDs, emails are emails, enums pick real values, numbers stay in range.
+- **Realistic, schema-valid data:** UUIDs are UUIDs, emails are emails, a `firstName` is a real first name, enums pick real values, numbers stay in range.
 - **Fresh data on every call,** so your UI is tested against varied lengths, sizes and missing optional fields.
 - **Runs locally too:** the same engine is a Node.js CLI for frontend development and CI.
 
@@ -79,10 +81,11 @@ curl -X POST http://localhost:3000/customers \
 
 - ✅ OpenAPI **3.0, 3.1** and Swagger **2.0**, JSON or YAML, validated before anything goes live
 - ✅ **Constraint-aware generation:** `format` (email, uuid, date, date-time, uri, …), `enum`, `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, `minItems`/`maxItems`
+- ✅ **Field-name-aware data:** `firstName`, `email`, `phone`, `city`, `country`, `postalCode`, `productName`, `company`, `…Id` and more get realistic values, always within the field's constraints
 - ✅ Nested objects, arrays, `allOf`, `oneOf` and `anyOf`
 - ✅ `POST`/`PUT`/`PATCH` echo the request body back with a generated `id`
 - ✅ Path parameters (`/customers/{id}`) match any value
-- ✅ Spec quality report with errors, warnings and suggestions
+- ✅ Spec quality report with a quality score, errors, warnings and suggestions
 - ✅ Request logging, plus built-in `/_mirage/health` and `/_mirage/routes`
 - ✅ CORS enabled, so a frontend on another port can call the mock directly
 
@@ -103,7 +106,7 @@ Honest, detailed comparisons: [vs Prism](https://mirageapi.com/compare/prism/) �
 ## Roadmap
 
 - [ ] Use `example` values from the spec when present
-- [ ] Field-name-aware data (`firstName` → a real first name, `city` → a real city)
+- [x] Field-name-aware data (`firstName` → a real first name, `city` → a real city)
 - [ ] Shareable public mock URLs
 - [ ] Request validation against the spec
 - [ ] Status code and latency simulation

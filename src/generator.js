@@ -1,11 +1,70 @@
 const { faker } = require('@faker-js/faker');
 
+// Field name (lowercase, without _ or -) -> realistic value generator
+const FIELD_NAME_GENERATORS = {
+  firstname: f => f.person.firstName(),
+  givenname: f => f.person.firstName(),
+  lastname: f => f.person.lastName(),
+  surname: f => f.person.lastName(),
+  familyname: f => f.person.lastName(),
+  name: f => f.person.fullName(),
+  fullname: f => f.person.fullName(),
+  displayname: f => f.person.fullName(),
+  username: f => f.internet.userName(),
+  jobtitle: f => f.person.jobTitle(),
+  email: f => f.internet.email(),
+  emailaddress: f => f.internet.email(),
+  phone: f => f.phone.number(),
+  phonenumber: f => f.phone.number(),
+  mobile: f => f.phone.number(),
+  street: f => f.location.streetAddress(),
+  streetaddress: f => f.location.streetAddress(),
+  address: f => f.location.streetAddress(),
+  addressline1: f => f.location.streetAddress(),
+  city: f => f.location.city(),
+  state: f => f.location.state(),
+  province: f => f.location.state(),
+  country: f => f.location.country(),
+  countrycode: f => f.location.countryCode(),
+  zip: f => f.location.zipCode(),
+  zipcode: f => f.location.zipCode(),
+  postalcode: f => f.location.zipCode(),
+  postcode: f => f.location.zipCode(),
+  company: f => f.company.name(),
+  companyname: f => f.company.name(),
+  organization: f => f.company.name(),
+  productname: f => f.commerce.productName(),
+  department: f => f.commerce.department(),
+  description: f => f.lorem.sentence(),
+  bio: f => f.lorem.sentence(),
+  url: f => f.internet.url(),
+  website: f => f.internet.url(),
+  avatar: f => f.image.avatar(),
+  avatarurl: f => f.image.avatar(),
+  imageurl: f => f.image.url(),
+  color: f => f.color.human(),
+  currency: f => f.finance.currencyCode(),
+  currencycode: f => f.finance.currencyCode(),
+  iban: f => f.finance.iban(),
+  ipaddress: f => f.internet.ip()
+};
+
+// Keys that are safe to match as a suffix (billingCity, homePhone, ...).
+// Longest first so e.g. "productname" wins over shorter keys.
+const NAME_SUFFIXES = [
+  'productname', 'companyname', 'firstname', 'lastname', 'postalcode',
+  'zipcode', 'username', 'country', 'street', 'email', 'phone', 'city', 'url'
+];
+
 class DataGenerator {
   constructor() {
     this.faker = faker;
   }
 
-  generateFromSchema(schema, depth = 0) {
+  // fieldName is the property name this schema belongs to (if any). It lets
+  // plain strings like `firstName` or `city` get realistic values instead of
+  // lorem ipsum - see _generateFromFieldName.
+  generateFromSchema(schema, depth = 0, fieldName = undefined) {
     if (depth > 10) {
       return null;
     }
@@ -16,13 +75,13 @@ class DataGenerator {
 
     if (schema.allOf) {
       const merged = this._mergeSchemas(schema.allOf);
-      return this.generateFromSchema(merged, depth + 1);
+      return this.generateFromSchema(merged, depth + 1, fieldName);
     }
 
     if (schema.anyOf || schema.oneOf) {
       const options = schema.anyOf || schema.oneOf;
       const randomSchema = options[Math.floor(Math.random() * options.length)];
-      return this.generateFromSchema(randomSchema, depth + 1);
+      return this.generateFromSchema(randomSchema, depth + 1, fieldName);
     }
 
     if (schema.enum) {
@@ -31,14 +90,14 @@ class DataGenerator {
 
     switch (schema.type) {
       case 'string':
-        return this._generateString(schema);
+        return this._generateString(schema, fieldName);
       case 'integer':
       case 'number':
         return this._generateNumber(schema);
       case 'boolean':
         return this._generateBoolean();
       case 'array':
-        return this._generateArray(schema, depth);
+        return this._generateArray(schema, depth, fieldName);
       case 'object':
         return this._generateObject(schema, depth);
       default:
@@ -46,7 +105,7 @@ class DataGenerator {
     }
   }
 
-  _generateString(schema = {}) {
+  _generateString(schema = {}, fieldName = undefined) {
     const { format, minLength, maxLength, pattern } = schema;
 
     if (format) {
@@ -77,6 +136,13 @@ class DataGenerator {
       }
     }
 
+    // No explicit format: use the field name for a realistic value, as long
+    // as it still satisfies the schema's length and pattern constraints
+    const byName = this._generateFromFieldName(fieldName);
+    if (byName !== undefined && this._satisfiesStringConstraints(byName, schema)) {
+      return byName;
+    }
+
     if (pattern) {
       try {
         return this._generateFromPattern(pattern);
@@ -105,6 +171,24 @@ class DataGenerator {
   }
 
   _generateFromPattern(pattern) {
+    // First try faker's regex generator. It doesn't understand anchors, \d,
+    // \w or groups, so simplify those, and only keep the result if it really
+    // matches the original pattern.
+    try {
+      const simplified = pattern
+        .replace(/^\^/, '')
+        .replace(/\$$/, '')
+        .replace(/\\d/g, '[0-9]')
+        .replace(/\\w/g, '[a-zA-Z0-9_]')
+        .replace(/\([^()]*\)\?/g, '');   // drop optional groups like (-[0-9]{4})?
+      const candidate = this.faker.helpers.fromRegExp(simplified);
+      if (new RegExp(pattern).test(candidate)) {
+        return candidate;
+      }
+    } catch (error) {
+      // Unsupported syntax - fall through to the heuristics below
+    }
+
     const simplePatterns = {
       '^[A-Z]{2,3}$': () => this.faker.string.alpha({ length: { min: 2, max: 3 }, casing: 'upper' }),
       '^[a-z]+$': () => this.faker.string.alpha({ length: { min: 3, max: 10 }, casing: 'lower' }),
@@ -131,6 +215,41 @@ class DataGenerator {
     return this.faker.lorem.word();
   }
 
+  // Realistic values for common field names on plain strings (no format).
+  // Names are normalized (lowercase, no _ or -) and matched exactly, or by
+  // suffix for the unambiguous keys in NAME_SUFFIXES (e.g. billingCity).
+  // Returns undefined when nothing matches.
+  _generateFromFieldName(fieldName) {
+    if (!fieldName || typeof fieldName !== 'string') {
+      return undefined;
+    }
+
+    // customerId, user_id, orderID -> UUID
+    if (/(^id$|[a-z0-9]Id$|_id$|ID$)/.test(fieldName)) {
+      return this.faker.string.uuid();
+    }
+
+    const key = fieldName.toLowerCase().replace(/[_-]/g, '');
+    const generator = FIELD_NAME_GENERATORS[key] ||
+      FIELD_NAME_GENERATORS[NAME_SUFFIXES.find(suffix => key.endsWith(suffix))];
+
+    return generator ? generator(this.faker) : undefined;
+  }
+
+  _satisfiesStringConstraints(value, schema = {}) {
+    const { minLength, maxLength, pattern } = schema;
+    if (minLength !== undefined && value.length < minLength) return false;
+    if (maxLength !== undefined && value.length > maxLength) return false;
+    if (pattern) {
+      try {
+        return new RegExp(pattern).test(value);
+      } catch (error) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   _generateNumber(schema = {}) {
     const { minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf } = schema;
     
@@ -154,6 +273,9 @@ class DataGenerator {
 
     if (multipleOf) {
       value = Math.round(value / multipleOf) * multipleOf;
+      // Trim float noise (e.g. 3599.4300000000003 for multipleOf 0.01)
+      const decimals = (String(multipleOf).split('.')[1] || '').length;
+      value = Number(value.toFixed(decimals));
     }
 
     return value;
@@ -163,7 +285,7 @@ class DataGenerator {
     return Math.random() < 0.5;
   }
 
-  _generateArray(schema, depth) {
+  _generateArray(schema, depth, fieldName) {
     const minItems = schema.minItems || 1;
     const maxItems = schema.maxItems || 5;
     const arrayLength = Math.floor(Math.random() * (maxItems - minItems + 1)) + minItems;
@@ -171,7 +293,7 @@ class DataGenerator {
     const items = [];
     for (let i = 0; i < arrayLength; i++) {
       if (schema.items) {
-        items.push(this.generateFromSchema(schema.items, depth + 1));
+        items.push(this.generateFromSchema(schema.items, depth + 1, fieldName));
       } else {
         items.push(this._generateString());
       }
@@ -189,7 +311,7 @@ class DataGenerator {
         const shouldInclude = isRequired || Math.random() > 0.3;
         
         if (shouldInclude) {
-          obj[propName] = this.generateFromSchema(propSchema, depth + 1);
+          obj[propName] = this.generateFromSchema(propSchema, depth + 1, propName);
         }
       }
     }
