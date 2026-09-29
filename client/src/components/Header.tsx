@@ -40,15 +40,18 @@ const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, ac
         minWidth: 0,
         flex: '1 1 auto'
       }}>
-        <span style={{
+        {/* The page's single <h1> - styled to look like the plain wordmark */}
+        <h1 style={{
+          margin: 0,
           fontFamily: 'var(--display)',
           fontWeight: 700,
           fontSize: 20,
+          lineHeight: 'inherit',
           letterSpacing: '-0.03em',
           color: 'var(--text)'
         }}>
           <span style={{ color: accentColor }}>Mi</span>rage<span style={{ color: accentColor }}>API</span>
-        </span>
+        </h1>
         <span style={{
           fontSize: 11,
           color: 'var(--text3)',

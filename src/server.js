@@ -101,12 +101,24 @@ class MockServer {
       // Serve examples folder for sample specs
       this.app.use('/examples', express.static(path.join(__dirname, '../examples')));
       
-      // Serve static files from dist directory
-      this.app.use(express.static(path.join(__dirname, '../dist')));
-      
-      // Serve index.html for all non-API routes (SPA routing)
+      // Serve static files from dist directory.
+      // Vite fingerprints everything under /assets, so those can be cached
+      // forever; index.html must always be revalidated so deploys show up.
+      this.app.use(express.static(path.join(__dirname, '../dist'), {
+        setHeaders: (res, filePath) => {
+          if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          } else if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-cache');
+          }
+        }
+      }));
+
+      // Serve index.html for the app's single page
       this.app.get('/', (req, res) => {
-        res.sendFile(path.join(__dirname, '../dist/index.html'));
+        res.sendFile(path.join(__dirname, '../dist/index.html'), {
+          headers: { 'Cache-Control': 'no-cache' }
+        });
       });
     }
   }
@@ -286,6 +298,13 @@ class MockServer {
 
       // Check if mock server is enabled for this session
       if (!sessionData.mockServerEnabled) {
+        // Browsers and crawlers asking for a page or a static file (favicon,
+        // apple-touch-icon, etc.) should get a 404, not a 503 - search engines
+        // treat repeated 5xx as a failing site and back off crawling.
+        if (this.webMode && this._isPageOrStaticRequest(req)) {
+          return next();
+        }
+
         return res.status(503).json({
           error: 'Mock server is disabled',
           message: 'Please enable the mock server to test endpoints',
@@ -345,14 +364,36 @@ class MockServer {
     });
 
     // Catch-all route for SPA (must be last)
+    // The app has no client-side routes, so only / is a real page. Any other
+    // path is a 404; browsers still get the app shell so users aren't
+    // stranded, but the 404 status keeps it from being indexed as a
+    // duplicate "soft 404" page.
     if (this.webMode) {
-      this.app.get('*', (req, res) => {
+      this.app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api/') || req.path.startsWith('/_mirage/')) {
           return res.status(404).json({ error: 'API endpoint not found' });
         }
-        res.sendFile(path.join(__dirname, '../dist/index.html'));
+        if (req.accepts(['json', 'html']) !== 'html') {
+          return next();
+        }
+        res.status(404).sendFile(path.join(__dirname, '../dist/index.html'), {
+          headers: { 'Cache-Control': 'no-cache' }
+        });
       });
     }
+  }
+
+  // True for GET/HEAD requests from a browser/crawler navigating to a page, or
+  // for well-known static file paths. API clients (fetch, curl, Postman) send
+  // Accept: */* or application/json and are not matched.
+  _isPageOrStaticRequest(req) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      return false;
+    }
+    if (/\.(png|jpe?g|gif|svg|ico|webp|webmanifest|xml|txt|css|js|map)$/i.test(req.path)) {
+      return true;
+    }
+    return req.accepts(['json', 'html']) === 'html';
   }
 
   _convertOpenAPIPathToExpress(openAPIPath) {
@@ -423,7 +464,7 @@ class MockServer {
       res.status(404).json({
         error: 'Not Found',
         message: `Route ${req.method} ${req.path} not found`,
-        availableRoutes: Object.keys(this.parsedPaths),
+        availableRoutes: Object.keys(this._getSessionData(req).parsedPaths || {}),
         timestamp: new Date().toISOString()
       });
     });
