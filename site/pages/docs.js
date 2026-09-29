@@ -38,7 +38,7 @@ yarn install        # or: npm install
 node src/index.js --spec ./examples/sample-spec.yaml --port 3000</code></pre>
   <p>On startup the CLI validates the spec, prints every registered endpoint and starts listening:</p>
   <pre><code>✓ Spec loaded and validated successfully
-🚀 Mirage mock server running on http://localhost:3000
+Mirage mock server running on http://localhost:3000
 📋 Endpoints:
    GET /customers
    POST /customers
@@ -78,7 +78,8 @@ node src/index.js --spec ./examples/sample-spec.yaml --port 3000</code></pre>
       <tr><td><code>string</code>, <code>format: uri</code> / <code>url</code></td><td>A URL</td></tr>
       <tr><td><code>string</code>, <code>format: phone</code> / <code>password</code> / <code>byte</code> / <code>binary</code></td><td>A phone number, password, base64 string or hex string</td></tr>
       <tr><td><code>string</code> with <code>minLength</code>/<code>maxLength</code></td><td>Text whose length is within the bounds (default 5–50 characters)</td></tr>
-      <tr><td><code>string</code> with <code>pattern</code></td><td>Common patterns such as <code>^[A-Z]{2,3}$</code> or <code>^\\d{4}$</code> are matched; other patterns fall back to a numeric or word value</td></tr>
+      <tr><td><code>string</code> with a common field name</td><td>A realistic value based on the property name: <code>firstName</code>, <code>lastName</code>, <code>name</code>, <code>username</code>, <code>email</code>, <code>phone</code>, <code>street</code>, <code>city</code>, <code>state</code>, <code>country</code>, <code>postalCode</code>, <code>company</code>, <code>productName</code>, <code>url</code>, <code>currency</code> and more, including suffixes such as <code>billingCity</code>. Names ending in <code>Id</code> get a UUID. Used only when the value also satisfies the field's length and <code>pattern</code> constraints.</td></tr>
+      <tr><td><code>string</code> with <code>pattern</code></td><td>A value generated from the regular expression and checked against it. Complex patterns (lookaheads, backreferences) fall back to a numeric or word value.</td></tr>
       <tr><td><code>integer</code> / <code>number</code></td><td>A value within <code>minimum</code>/<code>maximum</code> (default 0–1000), honouring <code>exclusiveMinimum</code>, <code>exclusiveMaximum</code> and <code>multipleOf</code>. Numbers are rounded to 2 decimals.</td></tr>
       <tr><td><code>boolean</code></td><td><code>true</code> or <code>false</code></td></tr>
       <tr><td><code>array</code></td><td>Between <code>minItems</code> and <code>maxItems</code> items (default 1–5), each generated from <code>items</code></td></tr>

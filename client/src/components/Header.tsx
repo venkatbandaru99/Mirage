@@ -9,13 +9,12 @@ import Icon from './Icon'
 
 interface HeaderProps {
   serverRunning: boolean
-  port: number
   onToggleServer: () => void
   accentColor: string
   sessionId?: string
 }
 
-const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, accentColor, sessionId }) => {
+const Header: React.FC<HeaderProps> = ({ serverRunning, onToggleServer, accentColor, sessionId }) => {
   const [hovered, setHovered] = useState(false)
 
   return (
@@ -106,7 +105,8 @@ const Header: React.FC<HeaderProps> = ({ serverRunning, port, onToggleServer, ac
             color: serverRunning ? 'var(--text)' : 'var(--text3)',
             fontFamily: 'var(--mono)'
           }}>
-            {serverRunning ? `localhost:${port}` : 'offline'}
+            {/* Mocks are served from the same origin as the app */}
+            {serverRunning ? window.location.host : 'offline'}
           </span>
         </div>
 

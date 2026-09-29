@@ -36,7 +36,6 @@ function App() {
   const [showValidation, setShowValidation] = useState(true)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const accentColor = '#a78bfa'
-  const port = 3000
 
   // Initialize session on app load
   useEffect(() => {
@@ -361,7 +360,6 @@ function App() {
     }}>
       <Header
         serverRunning={serverRunning}
-        port={port}
         onToggleServer={toggleServer}
         accentColor={accentColor}
         sessionId={sessionId || undefined}
