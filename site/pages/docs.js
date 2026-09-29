@@ -38,7 +38,7 @@ yarn install        # or: npm install
 node src/index.js --spec ./examples/sample-spec.yaml --port 3000</code></pre>
   <p>On startup the CLI validates the spec, prints every registered endpoint and starts listening:</p>
   <pre><code>✓ Spec loaded and validated successfully
-🚀 Mirage mock server running on http://localhost:3000
+Mirage mock server running on http://localhost:3000
 📋 Endpoints:
    GET /customers
    POST /customers

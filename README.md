@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔮 MirageAPI
+# MirageAPI
 
 **Instant mock servers from any OpenAPI spec.**
 
@@ -52,7 +52,7 @@ node src/index.js --spec ./examples/sample-spec.yaml --port 3000
 
 ```text
 ✓ Spec loaded and validated successfully
-🚀 Mirage mock server running on http://localhost:3000
+Mirage mock server running on http://localhost:3000
 📋 Endpoints:
    GET /customers
    POST /customers

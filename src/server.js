@@ -483,7 +483,7 @@ class MockServer {
     return new Promise((resolve, reject) => {
       try {
         this.server = this.app.listen(this.port, () => {
-          console.log(`\n🚀 Mirage mock server running on http://localhost:${this.port}`);
+          console.log(`\nMirage mock server running on http://localhost:${this.port}`);
           
           if (this.webMode) {
             console.log(`🌐 Web interface: http://localhost:${this.port}`);
