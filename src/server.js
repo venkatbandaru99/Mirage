@@ -18,7 +18,9 @@ class MockServer {
     this.generator = new DataGenerator();
     this.parser = new SpecParser();
     this.webMode = options.webMode || false;
-    
+    // Routes from the --spec file in CLI mode; web mode loads specs per session
+    this.cliPaths = parsedPaths || {};
+
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
     
@@ -55,9 +57,11 @@ class MockServer {
   // Session helper methods
   _initializeSession(req) {
     if (!req.session.mirage) {
+      // CLI mode serves the --spec routes to every client immediately;
+      // web mode starts empty and disabled until the user uploads a spec.
       req.session.mirage = {
-        parsedPaths: {},
-        mockServerEnabled: false,
+        parsedPaths: this.webMode ? {} : this.cliPaths,
+        mockServerEnabled: !this.webMode,
         lastSpecContent: null,
         lastSpecType: null,
         sessionId: req.sessionID
@@ -101,25 +105,22 @@ class MockServer {
       // Serve examples folder for sample specs
       this.app.use('/examples', express.static(path.join(__dirname, '../examples')));
       
-      // Serve static files from dist directory.
-      // Vite fingerprints everything under /assets, so those can be cached
-      // forever; index.html must always be revalidated so deploys show up.
+      // Serve the built site from dist:
+      //   /             landing page       (site/build.js)
+      //   /docs/ etc.   content pages      (site/build.js)
+      //   /app/         the React app      (Vite)
+      // express.static maps /docs/ to docs/index.html and redirects /docs to
+      // /docs/. Vite fingerprints everything under /assets, so those can be
+      // cached forever; HTML must always be revalidated so deploys show up.
       this.app.use(express.static(path.join(__dirname, '../dist'), {
         setHeaders: (res, filePath) => {
           if (filePath.includes(`${path.sep}assets${path.sep}`)) {
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-          } else if (filePath.endsWith('index.html')) {
+          } else if (filePath.endsWith('.html')) {
             res.setHeader('Cache-Control', 'no-cache');
           }
         }
       }));
-
-      // Serve index.html for the app's single page
-      this.app.get('/', (req, res) => {
-        res.sendFile(path.join(__dirname, '../dist/index.html'), {
-          headers: { 'Cache-Control': 'no-cache' }
-        });
-      });
     }
   }
 
@@ -363,11 +364,10 @@ class MockServer {
       res.json({ routes, sessionId: sessionData.sessionId });
     });
 
-    // Catch-all route for SPA (must be last)
-    // The app has no client-side routes, so only / is a real page. Any other
-    // path is a 404; browsers still get the app shell so users aren't
-    // stranded, but the 404 status keeps it from being indexed as a
-    // duplicate "soft 404" page.
+    // Catch-all 404 (must be last)
+    // Every real page is a static file served above, so anything reaching
+    // here is a 404. Browsers get the site's 404 page; API clients fall
+    // through to the JSON 404 handler.
     if (this.webMode) {
       this.app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api/') || req.path.startsWith('/_mirage/')) {
@@ -376,7 +376,7 @@ class MockServer {
         if (req.accepts(['json', 'html']) !== 'html') {
           return next();
         }
-        res.status(404).sendFile(path.join(__dirname, '../dist/index.html'), {
+        res.status(404).sendFile(path.join(__dirname, '../dist/404.html'), {
           headers: { 'Cache-Control': 'no-cache' }
         });
       });
@@ -490,8 +490,15 @@ class MockServer {
             console.log(`📡 API endpoints: http://localhost:${this.port}/api/*`);
           }
           
-          // Note: Routes are now session-specific and will be shown when users upload specs
-          console.log(`📋 Mock endpoints will be available per user session after uploading OpenAPI specs`);
+          if (this.webMode) {
+            // Web mode routes are session-specific and appear when users upload specs
+            console.log(`📋 Mock endpoints will be available per user session after uploading OpenAPI specs`);
+          } else {
+            console.log(`📋 Endpoints:`);
+            for (const route of Object.keys(this.cliPaths)) {
+              console.log(`   ${route}`);
+            }
+          }
           
           console.log(`\n💡 Health check: GET http://localhost:${this.port}/_mirage/health`);
           console.log(`📝 Route info: GET http://localhost:${this.port}/_mirage/routes\n`);

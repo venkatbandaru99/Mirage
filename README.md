@@ -56,10 +56,24 @@ mirage/
 │   ├── parser.js         # OpenAPI spec parser
 │   ├── generator.js      # Dummy data generator
 │   └── server.js         # Express mock server
+├── client/app/           # React web app (served at /app/)
+├── site/                 # Static website: landing, docs, guides, comparisons
+│   ├── build.js          # Renders site/pages/* to dist/ + sitemap.xml
+│   ├── layout.js         # Shared <head>, nav and footer
+│   └── pages/            # One module per page (add new pages here)
 ├── examples/
 │   └── sample-spec.yaml  # Sample OpenAPI spec
 └── package.json
 ```
+
+### Website structure
+
+`yarn build` runs Vite (the React app → `dist/app/`) and then `site/build.js`, which writes the static pages to `dist/`:
+
+- `/` landing page, `/docs/`, `/guides/*`, `/compare/*`, plus `404.html` and `sitemap.xml`
+- `/app/` is the interactive web app (`yarn dev:client` serves it at http://localhost:5173/app/)
+
+To add a page, create a module in `site/pages/` and add it to `PAGES` in `site/build.js`; it is added to the sitemap automatically.
 
 ## 🛠 Tech Stack
 

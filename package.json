@@ -14,7 +14,7 @@
     "dev:web": "concurrently \"yarn dev:server\" \"yarn dev:client\"",
     "dev:server": "node src/index.js --web --port 3001",
     "dev:client": "vite",
-    "build": "vite build",
+    "build": "vite build && node site/build.js",
     "preview": "vite preview",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
