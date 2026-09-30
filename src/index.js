@@ -18,6 +18,7 @@ program
   .option('-p, --port <number>', 'Port to run the server on', '3000')
   .option('-w, --web', 'Enable web interface mode')
   .option('--no-cors', 'Disable CORS headers')
+  .option('--no-validate', "Don't validate requests against the spec")
   .option('--quiet', 'Suppress non-error output')
   .action(async (options) => {
     try {
@@ -62,7 +63,7 @@ async function startMockServer(options) {
     console.log('⚠️  No endpoints found in the spec. Server will start but no routes will be available.');
   }
 
-  const server = new MockServer(parsedPaths, { port });
+  const server = new MockServer(parsedPaths, { port, validateRequests: options.validate });
   
   const serverInstance = await server.start();
   
@@ -90,7 +91,7 @@ async function startWebServer(options) {
   }
 
   // Start with empty paths for web mode - users will upload specs
-  const server = new MockServer({}, { port, webMode: true });
+  const server = new MockServer({}, { port, webMode: true, validateRequests: options.validate });
   
   const serverInstance = await server.start();
   

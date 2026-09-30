@@ -6,10 +6,18 @@
 
 const express = require('express');
 const session = require('express-session');
+const compression = require('compression');
 const crypto = require('crypto');
 const path = require('path');
+const { STATUS_CODES } = require('http');
 const DataGenerator = require('./generator');
 const SpecParser = require('./parser');
+const { fetchSpecText, SafeFetchError } = require('./safe-fetch');
+const { validateRequest } = require('./request-validator');
+const { ShareStore, RateLimiter } = require('./share-store');
+
+// /m/<id>/... - public shared mocks
+const SHARE_ROUTE = /^\/m\/([A-Za-z0-9_-]{8})(\/.*)?$/;
 
 class MockServer {
   constructor(parsedPaths, options = {}) {
@@ -18,9 +26,19 @@ class MockServer {
     this.generator = new DataGenerator();
     this.parser = new SpecParser();
     this.webMode = options.webMode || false;
+    // Validate mock requests against the spec unless turned off (--no-validate)
+    this.validateRequests = options.validateRequests !== false;
+    // Shared mocks and their abuse limits
+    this.shareStore = options.shareStore || new ShareStore();
+    this.shareCreateLimiter = new RateLimiter({ limit: 20, windowMs: 60 * 60 * 1000 }); // per IP
+    this.shareTrafficLimiter = new RateLimiter({ limit: 600, windowMs: 60 * 1000 }); // per share
     // Routes from the --spec file in CLI mode; web mode loads specs per session
     this.cliPaths = parsedPaths || {};
 
+    // Railway terminates HTTPS in front of the app; trust its proxy headers so
+    // req.protocol and req.ip are the client's.
+    this.app.set('trust proxy', 1);
+    this.app.use(compression());
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
     
@@ -37,7 +55,7 @@ class MockServer {
     }
     const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
-    this.app.use(session({
+    const sessionMiddleware = session({
       secret: sessionSecret,
       resave: false,
       saveUninitialized: true,
@@ -45,7 +63,11 @@ class MockServer {
         secure: false, // Set to true in production with HTTPS
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
       }
-    }));
+    });
+    // Shared mocks are public and cookie-less; skip sessions there so every
+    // curl/CI call doesn't create a new server-side session
+    this.app.use((req, res, next) =>
+      SHARE_ROUTE.test(req.path) ? next() : sessionMiddleware(req, res, next));
     
     this._setupMiddleware();
     this._setupWebRoutes();
@@ -81,7 +103,8 @@ class MockServer {
       
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Headers',
+        'Content-Type, Authorization, Prefer, X-Mirage-Status, X-Mirage-Delay, X-Mirage-Example, X-Mirage-Validate');
       
       if (req.method === 'OPTIONS') {
         return res.status(200).end();
@@ -102,6 +125,12 @@ class MockServer {
     });
 
     if (this.webMode) {
+      // The start command serves a prebuilt dist/ (yarn build runs in the
+      // deploy's build phase). Make a missing build obvious in the logs.
+      if (!require('fs').existsSync(path.join(__dirname, '../dist/app/index.html'))) {
+        console.error('⚠️  dist/ is missing or incomplete - run `yarn build` before `yarn start:web`.');
+      }
+
       // Serve examples folder for sample specs
       this.app.use('/examples', express.static(path.join(__dirname, '../examples')));
       
@@ -134,45 +163,87 @@ class MockServer {
         if (!spec) {
           return res.status(400).json({ error: 'OpenAPI spec is required' });
         }
-
-        let specData;
-        let specParser = new SpecParser();
-        
-        if (type === 'yaml' || type === 'json') {
-          // Parse spec from text content
-          if (type === 'yaml') {
-            const yaml = require('js-yaml');
-            specData = yaml.load(spec);
-          } else {
-            specData = JSON.parse(spec);
-          }
-          
-          // Validate the spec with original text for line numbers
-          await specParser._validateAndParseSpec(specData, spec, type);
-          sessionData.parsedPaths = specParser.getParsedPaths();
-        } else {
+        if (type !== 'yaml' && type !== 'json') {
           return res.status(400).json({ error: 'Invalid spec type. Must be yaml or json' });
         }
 
-        const validationResults = specParser.getValidationResults();
-
-        // Store the spec content and type for re-validation in session
-        sessionData.lastSpecContent = spec;
-        sessionData.lastSpecType = type;
-
-        res.json({
-          success: true,
-          paths: sessionData.parsedPaths,
-          info: specParser.getSpec()?.info || {},
-          validation: validationResults,
-          sessionId: sessionData.sessionId
-        });
+        res.json(await this._loadSpec(sessionData, spec, type));
       } catch (error) {
         res.status(400).json({
           error: 'Failed to parse OpenAPI spec',
           message: error.message
         });
       }
+    });
+
+    // Load a spec from a public URL. The fetch refuses private/internal
+    // addresses (see src/safe-fetch.js) because this runs on a public server.
+    this.app.post('/api/parse-spec-url', async (req, res) => {
+      const { url } = req.body || {};
+      if (!url || typeof url !== 'string') {
+        return res.status(400).json({ error: 'A spec URL is required', message: 'A spec URL is required' });
+      }
+
+      let text;
+      try {
+        text = await fetchSpecText(url.trim());
+      } catch (error) {
+        const message = error instanceof SafeFetchError ? error.message : 'Could not fetch the URL';
+        return res.status(400).json({ error: 'Failed to fetch spec', message });
+      }
+
+      try {
+        const type = looksLikeJson(text) ? 'json' : 'yaml';
+        const result = await this._loadSpec(this._getSessionData(req), text, type);
+        res.json({ ...result, spec: text, type });
+      } catch (error) {
+        res.status(400).json({ error: 'Failed to parse OpenAPI spec', message: error.message });
+      }
+    });
+
+    // A ready-to-send request for a route: path parameters filled in,
+    // required query parameters added, and a body generated from the request
+    // schema. Used by the app's tester so requests pass validation for any spec.
+    this.app.get('/api/sample-request', (req, res) => {
+      const sessionData = this._getSessionData(req);
+      const route = sessionData.parsedPaths[req.query.route];
+      if (!route) {
+        return res.status(404).json({ error: 'Route not found' });
+      }
+      res.json(this._sampleRequest(route));
+    });
+
+    // Shared mock link for this session's spec. POST creates it, or updates
+    // it with the current spec while keeping the same link.
+    this.app.post('/api/share', (req, res) => {
+      const sessionData = this._getSessionData(req);
+      if (Object.keys(sessionData.parsedPaths).length === 0) {
+        return res.status(400).json({ error: 'No spec loaded', message: 'Load a spec before sharing it' });
+      }
+      if (!this.shareCreateLimiter.allow(req.ip)) {
+        return res.status(429).json({ error: 'Too many requests', message: 'Share limit reached - try again later' });
+      }
+
+      try {
+        const share = this.shareStore.save(sessionData.sessionId, {
+          parsedPaths: sessionData.parsedPaths,
+          title: sessionData.specTitle,
+          specVersion: sessionData.specVersion
+        });
+        res.json(this._shareInfo(req, share));
+      } catch (error) {
+        res.status(400).json({ error: 'Could not share this spec', message: error.message });
+      }
+    });
+
+    this.app.get('/api/share', (req, res) => {
+      const share = this.shareStore.getForSession(this._getSessionData(req).sessionId);
+      res.json({ share: share ? this._shareInfo(req, share) : null });
+    });
+
+    this.app.delete('/api/share', (req, res) => {
+      const removed = this.shareStore.deleteForSession(this._getSessionData(req).sessionId);
+      res.json({ success: true, removed });
     });
 
     this.app.get('/api/routes', (req, res) => {
@@ -184,7 +255,9 @@ class MockServer {
         hasRequestBody: !!info.requestBody,
         responseTypes: Object.keys(info.responses || {}),
         parameters: info.parameters || [],
-        requestBodySchema: info.requestBody?.schema || null
+        requestBodySchema: info.requestBody?.schema || null,
+        tags: info.tags || [],
+        summary: info.summary
       }));
       
       res.json({ routes, sessionId: sessionData.sessionId });
@@ -284,7 +357,230 @@ class MockServer {
     });
   }
 
+  // Parse and validate spec text, then store its routes in the session.
+  // Shared by the paste/upload endpoint and the load-from-URL endpoint.
+  async _loadSpec(sessionData, text, type) {
+    const yaml = require('js-yaml');
+    const specData = type === 'yaml' ? yaml.load(text) : JSON.parse(text);
+
+    const specParser = new SpecParser();
+    // Validate the spec with original text for line numbers
+    await specParser._validateAndParseSpec(specData, text, type);
+    sessionData.parsedPaths = specParser.getParsedPaths();
+
+    // Store the spec content and type for re-validation in session
+    sessionData.lastSpecContent = text;
+    sessionData.lastSpecType = type;
+    sessionData.specTitle = specParser.getSpec()?.info?.title;
+    sessionData.specVersion = specParser.getSpecVersion();
+
+    return {
+      success: true,
+      paths: sessionData.parsedPaths,
+      info: specParser.getSpec()?.info || {},
+      specVersion: specParser.getSpecVersion(),
+      validation: specParser.getValidationResults(),
+      sessionId: sessionData.sessionId
+    };
+  }
+
+  // Build { path, query, body } for a route using generated values
+  _sampleRequest(route) {
+    const pathParams = {};
+    const query = {};
+    for (const param of route.parameters || []) {
+      if (param.in === 'path') {
+        pathParams[param.name] = this.generator.generateFromSchema(param.schema, 0, param.name);
+      } else if (param.in === 'query' && param.required) {
+        query[param.name] = this.generator.generateFromSchema(param.schema, 0, param.name);
+      }
+    }
+    const path = route.path.replace(/\{([^}]+)\}/g, (_, name) =>
+      encodeURIComponent(String(pathParams[name] ?? name)));
+
+    const body = route.requestBody?.schema
+      ? this.generator.generateFromSchema(withoutReadOnly(route.requestBody.schema))
+      : undefined;
+
+    return { path, query, body };
+  }
+
+  // Per-request mock controls from query parameters (?__example=true) or
+  // headers (Prefer / X-Mirage-*). The __ query parameters are MirageAPI's own
+  // and are ignored when matching and validating the request.
+  _readControls(req) {
+    const q = req.query || {};
+    const prefer = String(req.headers.prefer || '').toLowerCase();
+    const truthy = v => v !== undefined && ['1', 'true', 'yes', ''].includes(String(v).toLowerCase());
+    const falsy = v => v !== undefined && ['0', 'false', 'no', 'off'].includes(String(v).toLowerCase());
+
+    // Status: ?__status=404, X-Mirage-Status: 404, or Prefer: code=404 (Prism)
+    const preferCode = /(?:^|[\s,;])code=(\d{3})/.exec(prefer);
+    const statusInput = q.__status ?? req.headers['x-mirage-status'] ?? (preferCode && preferCode[1]);
+    const status = parseInt(statusInput, 10);
+
+    return {
+      useExamples: truthy(q.__example) ||
+        truthy(req.headers['x-mirage-example']) ||
+        /(^|[\s,;])example(=|$|[\s,;])/.test(prefer),
+      status: status >= 200 && status <= 599 ? status : null,
+      validate: this.validateRequests && !falsy(q.__validate) && !falsy(req.headers['x-mirage-validate']),
+      delayMs: parseDelay(q.__delay ?? req.headers['x-mirage-delay'])
+    };
+  }
+
+  // Respond with a simulated status code. Uses the spec's response for that
+  // code when it defines one (schema or example), otherwise a generic body.
+  _respondWithStatus(res, route, status, controls) {
+    if (status === 204 || status === 304) {
+      return res.status(status).end();
+    }
+
+    const entry = route.responses[String(status)] ||
+      (status >= 400 ? route.responses.default : undefined);
+    if (entry && (entry.schema || (controls.useExamples && entry.example !== undefined))) {
+      return res.status(status).json(this.generator.generateResponseData(entry, controls));
+    }
+
+    const reason = STATUS_CODES[status] || 'Status';
+    return res.status(status).json(status >= 400
+      ? { error: reason, status, message: `Simulated ${status} response` }
+      : { status, message: reason });
+  }
+
+  _shareInfo(req, share) {
+    return {
+      id: share.id,
+      url: `${req.protocol}://${req.get('host')}/m/${share.id}`,
+      title: share.title,
+      endpoints: Object.keys(share.parsedPaths).length,
+      createdAt: new Date(share.createdAt).toISOString(),
+      updatedAt: new Date(share.updatedAt).toISOString(),
+      expiresAt: new Date(share.expiresAt).toISOString()
+    };
+  }
+
+  // Public shared mocks: /m/<id>/<spec path>. No session needed; the same
+  // validation, simulation and example controls apply.
+  _handleShareRequest(req, res) {
+    const [, id, subPath = '/'] = SHARE_ROUTE.exec(req.path);
+    res.setHeader('X-Robots-Tag', 'noindex');
+
+    const share = this.shareStore.get(id);
+    if (!share) {
+      return res.status(404).json({
+        error: 'Share not found or expired',
+        message: 'This shared mock link does not exist or has expired. Shared links last 7 days.'
+      });
+    }
+    if (!this.shareTrafficLimiter.allow(id)) {
+      return res.status(429).json({ error: 'Too many requests', message: 'This shared mock is receiving too many requests - slow down' });
+    }
+
+    if (req.method === 'GET' && subPath === '/_mirage/routes') {
+      return res.json({
+        title: share.title,
+        expiresAt: new Date(share.expiresAt).toISOString(),
+        routes: Object.keys(share.parsedPaths)
+      });
+    }
+
+    if (!this._dispatchMock(req, res, share.parsedPaths, subPath)) {
+      res.status(404).json({
+        error: 'Not Found',
+        message: `Route ${req.method} ${subPath} not found in this shared mock`,
+        availableRoutes: Object.keys(share.parsedPaths)
+      });
+    }
+  }
+
+  // Find the spec route for a request. Tries an exact "METHOD /path" key
+  // first, then OpenAPI path templates such as /customers/{id}.
+  // Returns { route, pathParams } or null.
+  _matchRoute(parsedPaths, method, requestPath) {
+    const exact = parsedPaths[`${method} ${requestPath}`];
+    if (exact) {
+      return { route: exact, pathParams: {} };
+    }
+
+    for (const [key, route] of Object.entries(parsedPaths)) {
+      const [routeMethod, routePath] = key.split(' ', 2);
+      if (routeMethod !== method) continue;
+
+      const names = [];
+      const pattern = routePath
+        .split('/')
+        .map(segment => segment.replace(/[.*+?^$()|[\]\\]/g, '\\$&')
+          .replace(/\{([^}]+)\}/g, (_, name) => {
+            names.push(name);
+            return '([^/]+)';
+          }))
+        .join('/');
+      const match = new RegExp(`^${pattern}$`).exec(requestPath);
+      if (match) {
+        const pathParams = {};
+        names.forEach((name, i) => {
+          try {
+            pathParams[name] = decodeURIComponent(match[i + 1]);
+          } catch (error) {
+            pathParams[name] = match[i + 1]; // malformed %-escape
+          }
+        });
+        return { route, pathParams };
+      }
+    }
+    return null;
+  }
+
+  // Respond to a mock request from a set of spec routes. Used by the session
+  // catch-all below and by shared mock URLs. Returns false when no route
+  // matches so the caller can fall through to a 404.
+  _dispatchMock(req, res, parsedPaths, requestPath = req.path) {
+    const match = this._matchRoute(parsedPaths, req.method, requestPath);
+    if (!match) {
+      return false;
+    }
+    const controls = this._readControls(req);
+    const respond = () => {
+      if (res.headersSent) return;
+
+      // A forced status is an explicit simulation, so it skips validation
+      if (controls.validate && !controls.status) {
+        const hasJsonBody = req.is('application/json') || req.is('application/*+json');
+        const errors = validateRequest(match.route, {
+          pathParams: match.pathParams,
+          query: req.query,
+          body: hasJsonBody ? req.body : undefined
+        });
+        if (errors.length > 0) {
+          return res.status(400).json({
+            error: 'Request validation failed',
+            message: 'The request does not match the OpenAPI spec. Send ?__validate=false to skip validation.',
+            errors
+          });
+        }
+      }
+
+      if (controls.status) {
+        this._respondWithStatus(res, match.route, controls.status, controls);
+      } else {
+        this._handleRequest(req, res, match.route, controls);
+      }
+    };
+
+    if (controls.delayMs > 0) {
+      res.setHeader('X-Mirage-Delay', String(controls.delayMs));
+      setTimeout(respond, controls.delayMs);
+    } else {
+      respond();
+    }
+    return true;
+  }
+
   _setupMockRoutes() {
+    // Shared mocks first - they don't depend on the visitor's session
+    this.app.all(SHARE_ROUTE, (req, res) => this._handleShareRequest(req, res));
+
     // Set up a catch-all handler for dynamic routes
     this.app.use((req, res, next) => {
       // Skip API routes and static files
@@ -314,29 +610,10 @@ class MockServer {
         });
       }
 
-      // Find matching route in session's parsedPaths
-      const routeKey = `${req.method} ${req.path}`;
-      let matchedRoute = sessionData.parsedPaths[routeKey];
-      
-      // If not found, try with path parameters
-      if (!matchedRoute) {
-        for (const [key, routeInfo] of Object.entries(sessionData.parsedPaths)) {
-          const [method, path] = key.split(' ', 2);
-          if (method === req.method) {
-            const expressPath = this._convertOpenAPIPathToExpress(path);
-            const pathRegex = new RegExp('^' + expressPath.replace(/:[^/]+/g, '[^/]+') + '$');
-            if (pathRegex.test(req.path)) {
-              matchedRoute = routeInfo;
-              break;
-            }
-          }
-        }
+      if (this._dispatchMock(req, res, sessionData.parsedPaths)) {
+        return;
       }
-      
-      if (matchedRoute) {
-        return this._handleRequest(req, res, matchedRoute);
-      }
-      
+
       // Continue to next middleware (will eventually hit 404 handler)
       next();
     });
@@ -396,18 +673,14 @@ class MockServer {
     return req.accepts(['json', 'html']) === 'html';
   }
 
-  _convertOpenAPIPathToExpress(openAPIPath) {
-    return openAPIPath.replace(/{([^}]+)}/g, ':$1');
-  }
-
-  _handleRequest(req, res, routeInfo) {
-    const { method, responses, requestBody } = routeInfo;
+  _handleRequest(req, res, routeInfo, controls = {}) {
+    const { method } = routeInfo;
 
     try {
       if (['POST', 'PUT', 'PATCH'].includes(method)) {
-        return this._handleMutationRequest(req, res, routeInfo);
+        return this._handleMutationRequest(req, res, routeInfo, controls);
       } else {
-        return this._handleQueryRequest(req, res, routeInfo);
+        return this._handleQueryRequest(req, res, routeInfo, controls);
       }
     } catch (error) {
       console.error(`Error handling request: ${error.message}`);
@@ -419,13 +692,13 @@ class MockServer {
     }
   }
 
-  _handleQueryRequest(req, res, routeInfo) {
+  _handleQueryRequest(req, res, routeInfo, controls = {}) {
     const { responses } = routeInfo;
     
     const successResponse = responses['200'] || responses['201'] || responses['default'];
     
     if (successResponse) {
-      const responseData = this.generator.generateResponseData(successResponse);
+      const responseData = this.generator.generateResponseData(successResponse, controls);
       return res.status(200).json(responseData);
     } else {
       return res.status(200).json({
@@ -436,10 +709,16 @@ class MockServer {
     }
   }
 
-  _handleMutationRequest(req, res, routeInfo) {
+  _handleMutationRequest(req, res, routeInfo, controls = {}) {
     const { responses, requestBody } = routeInfo;
     
-    if (requestBody && Object.keys(req.body).length > 0) {
+    // In example mode the spec's example response wins over echoing the body
+    const exampleResponse = responses['201'] || responses['200'];
+    if (controls.useExamples && exampleResponse && exampleResponse.example !== undefined) {
+      return res.status(201).json(exampleResponse.example);
+    }
+
+    if (requestBody && req.body && Object.keys(req.body).length > 0) {
       const generatedId = this.generator.faker.string.uuid();
       const echoResponse = this.generator.generateRequestEcho(req.body, generatedId);
       return res.status(201).json(echoResponse);
@@ -448,7 +727,7 @@ class MockServer {
     const successResponse = responses['201'] || responses['200'] || responses['default'];
     
     if (successResponse) {
-      const responseData = this.generator.generateResponseData(successResponse);
+      const responseData = this.generator.generateResponseData(successResponse, controls);
       return res.status(201).json(responseData);
     } else {
       return res.status(201).json({
@@ -521,6 +800,7 @@ class MockServer {
   }
 
   stop() {
+    this.shareStore.close();
     return new Promise((resolve) => {
       if (this.server) {
         this.server.close(() => {
@@ -538,4 +818,55 @@ class MockServer {
   }
 }
 
+// "800" -> 800 ms, "200-800" -> random value in that range. Capped at 10 s.
+const MAX_DELAY_MS = 10000;
+function parseDelay(input) {
+  if (input === undefined || input === null || input === '') return 0;
+  const range = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(String(input));
+  let ms;
+  if (range) {
+    const [lo, hi] = [Number(range[1]), Number(range[2])].sort((a, b) => a - b);
+    ms = lo + Math.floor(Math.random() * (hi - lo + 1));
+  } else {
+    ms = Number(input);
+  }
+  if (!Number.isFinite(ms) || ms <= 0) return 0;
+  return Math.min(Math.round(ms), MAX_DELAY_MS);
+}
+
+function looksLikeJson(text) {
+  const trimmed = text.trimStart();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return false;
+  try {
+    JSON.parse(trimmed);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Copy of a schema without readOnly properties (e.g. a server-generated id),
+// used for request bodies
+function withoutReadOnly(schema, depth = 0) {
+  if (!schema || typeof schema !== 'object' || depth > 10) return schema;
+  const copy = { ...schema };
+  if (schema.properties) {
+    copy.properties = {};
+    for (const [name, prop] of Object.entries(schema.properties)) {
+      if (!prop || !prop.readOnly) {
+        copy.properties[name] = withoutReadOnly(prop, depth + 1);
+      }
+    }
+    if (Array.isArray(schema.required)) {
+      copy.required = schema.required.filter(name => name in copy.properties);
+    }
+  }
+  if (schema.items) copy.items = withoutReadOnly(schema.items, depth + 1);
+  for (const key of ['allOf', 'oneOf', 'anyOf']) {
+    if (Array.isArray(schema[key])) copy[key] = schema[key].map(s => withoutReadOnly(s, depth + 1));
+  }
+  return copy;
+}
+
 module.exports = MockServer;
+module.exports.withoutReadOnly = withoutReadOnly;

@@ -3,6 +3,33 @@ const fs = require('fs');
 const yaml = require('js-yaml');
 const SpecValidator = require('./validator');
 
+// application/json, application/problem+json, etc.
+function isJsonMediaType(mediaType) {
+  return mediaType === 'application/json' || /\+json$/.test(mediaType);
+}
+
+// The media type's `example`, or the value of its first named `examples` entry
+function firstExample(mediaTypeObject) {
+  if (mediaTypeObject.example !== undefined) {
+    return mediaTypeObject.example;
+  }
+  const named = Object.values(mediaTypeObject.examples || {})[0];
+  return named && named.value !== undefined ? named.value : undefined;
+}
+
+// Swagger 2.0 non-body parameters carry their type keywords directly
+// (type: integer, enum, minimum...) instead of in a `schema` object
+function swagger2ParamSchema(param) {
+  const keys = ['type', 'format', 'items', 'enum', 'minimum', 'maximum', 'exclusiveMinimum',
+    'exclusiveMaximum', 'minLength', 'maxLength', 'pattern', 'minItems', 'maxItems', 'multipleOf'];
+  const schema = {};
+  for (const key of keys) {
+    if (param[key] !== undefined) schema[key] = param[key];
+  }
+  if (!schema.type) schema.type = 'string';
+  return schema;
+}
+
 class SpecParser {
   constructor() {
     this.spec = null;
@@ -24,7 +51,7 @@ class SpecParser {
       console.log(`✓ Spec loaded and validated successfully`);
       console.log(`  - Title: ${this.spec.info.title || 'Unknown'}`);
       console.log(`  - Version: ${this.spec.info.version || 'Unknown'}`);
-      console.log(`  - OpenAPI Version: ${this.spec.openapi}`);
+      console.log(`  - OpenAPI Version: ${this.getSpecVersion()}`);
 
       this._extractPaths();
 
@@ -41,7 +68,7 @@ class SpecParser {
       console.log(`✓ Spec validated successfully`);
       console.log(`  - Title: ${this.spec.info.title || 'Unknown'}`);
       console.log(`  - Version: ${this.spec.info.version || 'Unknown'}`);
-      console.log(`  - OpenAPI Version: ${this.spec.openapi}`);
+      console.log(`  - OpenAPI Version: ${this.getSpecVersion()}`);
 
       // Run comprehensive validation
       this.validationResults = this.validator.validateSpec(this.spec, originalText, fileType);
@@ -66,18 +93,27 @@ class SpecParser {
       return;
     }
 
+    // Swagger 2.0 puts response schemas directly on the response and the
+    // request body in an `in: body` parameter; OpenAPI 3 uses `content`.
+    const isSwagger2 = this.spec.swagger === '2.0';
+
     for (const [path, pathItem] of Object.entries(this.spec.paths)) {
       for (const [method, operation] of Object.entries(pathItem)) {
         if (['get', 'post', 'put', 'patch', 'delete'].includes(method.toLowerCase())) {
           const routeKey = `${method.toUpperCase()} ${path}`;
+          const parameters = this._mergeParameters(pathItem.parameters, operation.parameters);
           
           this.parsedPaths[routeKey] = {
             path: path,
             method: method.toUpperCase(),
             operation: operation,
-            responses: this._extractResponseSchemas(operation.responses || {}),
-            parameters: this._extractParameters(operation.parameters || []),
-            requestBody: this._extractRequestBody(operation.requestBody)
+            tags: operation.tags || [],
+            summary: operation.summary,
+            responses: this._extractResponseSchemas(operation.responses || {}, isSwagger2),
+            parameters: this._extractParameters(parameters.filter(p => p.in !== 'body' && p.in !== 'formData')),
+            requestBody: isSwagger2
+              ? this._extractSwagger2Body(parameters)
+              : this._extractRequestBody(operation.requestBody)
           };
         }
       }
@@ -89,23 +125,59 @@ class SpecParser {
     });
   }
 
-  _extractResponseSchemas(responses) {
+  // Every status code the spec defines is kept (so status simulation knows
+  // about e.g. 204 or 404 even without a body). `schema` is the JSON body
+  // schema or null; `example` is the spec's example for that response, if any.
+  _extractResponseSchemas(responses, isSwagger2 = false) {
     const responseSchemas = {};
 
     for (const [statusCode, response] of Object.entries(responses)) {
-      if (response.content) {
-        for (const [mediaType, mediaTypeObject] of Object.entries(response.content)) {
-          if (mediaType === 'application/json' && mediaTypeObject.schema) {
-            responseSchemas[statusCode] = {
-              mediaType,
-              schema: this._resolveSchema(mediaTypeObject.schema)
-            };
-          }
+      const entry = { mediaType: null, schema: null, example: undefined };
+
+      if (isSwagger2) {
+        if (response.schema) {
+          entry.mediaType = 'application/json';
+          entry.schema = this._resolveSchema(response.schema);
+        }
+        if (response.examples && response.examples['application/json'] !== undefined) {
+          entry.example = response.examples['application/json'];
+        }
+      } else if (response.content) {
+        const jsonType = Object.keys(response.content).find(isJsonMediaType);
+        if (jsonType) {
+          const mediaTypeObject = response.content[jsonType];
+          entry.mediaType = jsonType;
+          entry.schema = mediaTypeObject.schema ? this._resolveSchema(mediaTypeObject.schema) : null;
+          entry.example = firstExample(mediaTypeObject);
         }
       }
+
+      responseSchemas[statusCode] = entry;
     }
 
     return responseSchemas;
+  }
+
+  // Path-level parameters apply to every operation; operation-level ones
+  // override them by name + location.
+  _mergeParameters(pathParams = [], operationParams = []) {
+    const merged = new Map();
+    for (const param of [...(pathParams || []), ...(operationParams || [])]) {
+      merged.set(`${param.in}:${param.name}`, param);
+    }
+    return [...merged.values()];
+  }
+
+  _extractSwagger2Body(parameters) {
+    const bodyParam = parameters.find(p => p.in === 'body' && p.schema);
+    if (!bodyParam) {
+      return null;
+    }
+    return {
+      mediaType: 'application/json',
+      schema: this._resolveSchema(bodyParam.schema),
+      required: bodyParam.required || false
+    };
   }
 
   _extractParameters(parameters) {
@@ -113,7 +185,7 @@ class SpecParser {
       name: param.name,
       in: param.in, // path, query, header, cookie
       required: param.required || false,
-      schema: this._resolveSchema(param.schema || { type: 'string' })
+      schema: this._resolveSchema(param.schema || swagger2ParamSchema(param))
     }));
   }
 
@@ -123,7 +195,7 @@ class SpecParser {
     }
 
     for (const [mediaType, mediaTypeObject] of Object.entries(requestBody.content)) {
-      if (mediaType === 'application/json' && mediaTypeObject.schema) {
+      if (isJsonMediaType(mediaType) && mediaTypeObject.schema) {
         return {
           mediaType,
           schema: this._resolveSchema(mediaTypeObject.schema),
@@ -190,6 +262,11 @@ class SpecParser {
 
   getSpec() {
     return this.spec;
+  }
+
+  // e.g. "3.0.3" or "2.0"
+  getSpecVersion() {
+    return this.spec?.openapi || this.spec?.swagger || 'unknown';
   }
 
   getValidationResults() {

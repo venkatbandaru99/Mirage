@@ -12,7 +12,7 @@ import ResponsePanel from './components/ResponsePanel'
 import LogStrip, { LogEntry } from './components/LogStrip'
 import SimpleValidationPanel from './components/SimpleValidationPanel'
 import Footer from './components/Footer'
-import { ParsedRoute } from './types/api'
+import { ParsedRoute, MockOptions } from './types/api'
 
 interface ResponseData {
   status: number
@@ -35,6 +35,7 @@ function App() {
   const [validationResults, setValidationResults] = useState<any>(null)
   const [showValidation, setShowValidation] = useState(true)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [mockOptions, setMockOptions] = useState<MockOptions>({ status: '', delay: '', useExamples: false, validate: true })
   const accentColor = '#a78bfa'
 
   // Initialize session on app load
@@ -85,133 +86,6 @@ function App() {
     }
   }
 
-  // Mock response data based on endpoint
-  const generateMockResponse = (endpoint: ParsedRoute): any => {
-    const { method, path } = endpoint
-    
-    if (path.includes('/customers')) {
-      if (method === 'GET' && !path.includes('{id}')) {
-        return {
-          data: [
-            {
-              id: '123e4567-e89b-12d3-a456-426614174000',
-              firstName: 'John',
-              lastName: 'Doe',
-              email: 'john.doe@example.com',
-              phone: '+1234567890',
-              age: 35,
-              status: 'active',
-              createdAt: '2023-01-15T10:30:00Z'
-            },
-            {
-              id: '456e7890-e89b-12d3-a456-426614174001',
-              firstName: 'Jane',
-              lastName: 'Smith',
-              email: 'jane.smith@example.com',
-              phone: '+1234567891',
-              age: 28,
-              status: 'active',
-              createdAt: '2023-02-20T14:15:00Z'
-            }
-          ],
-          total: 2,
-          page: 1,
-          limit: 10
-        }
-      } else if (method === 'GET' && path.includes('{id}')) {
-        return {
-          id: '123e4567-e89b-12d3-a456-426614174000',
-          firstName: 'John',
-          lastName: 'Doe',
-          email: 'john.doe@example.com',
-          phone: '+1234567890',
-          age: 35,
-          status: 'active',
-          createdAt: '2023-01-15T10:30:00Z',
-          updatedAt: '2023-01-15T10:30:00Z'
-        }
-      } else if (method === 'POST') {
-        return {
-          id: '789e0123-e89b-12d3-a456-426614174002',
-          firstName: 'Alice',
-          lastName: 'Johnson',
-          email: 'alice.johnson@example.com',
-          phone: '+1234567892',
-          age: 32,
-          status: 'active',
-          createdAt: new Date().toISOString()
-        }
-      }
-    } else if (path.includes('/orders')) {
-      if (method === 'GET' && !path.includes('{id}')) {
-        return {
-          data: [
-            {
-              id: '987e6543-e21b-43d3-a456-426614174001',
-              customerId: '123e4567-e89b-12d3-a456-426614174000',
-              totalAmount: 299.99,
-              currency: 'USD',
-              status: 'processing',
-              items: [
-                {
-                  id: 'item_001',
-                  productName: 'Wireless Headphones',
-                  quantity: 1,
-                  unitPrice: 149.99
-                },
-                {
-                  id: 'item_002',
-                  productName: 'USB Cable',
-                  quantity: 2,
-                  unitPrice: 75.00
-                }
-              ],
-              createdAt: '2023-01-15T14:30:00Z'
-            }
-          ],
-          total: 1,
-          page: 1
-        }
-      } else if (method === 'GET' && path.includes('{id}')) {
-        return {
-          id: '987e6543-e21b-43d3-a456-426614174001',
-          customerId: '123e4567-e89b-12d3-a456-426614174000',
-          totalAmount: 299.99,
-          currency: 'USD',
-          status: 'processing',
-          items: [
-            {
-              id: 'item_001',
-              productName: 'Wireless Headphones',
-              quantity: 1,
-              unitPrice: 149.99
-            }
-          ],
-          shippingAddress: {
-            street: '123 Main St',
-            city: 'Springfield',
-            state: 'IL',
-            postalCode: '62701',
-            country: 'US'
-          },
-          createdAt: '2023-01-15T14:30:00Z',
-          updatedAt: '2023-01-15T14:30:00Z'
-        }
-      } else if (method === 'POST') {
-        return {
-          id: '654e3210-e21b-43d3-a456-426614174003',
-          customerId: '123e4567-e89b-12d3-a456-426614174000',
-          totalAmount: 199.99,
-          currency: 'USD',
-          status: 'pending',
-          createdAt: new Date().toISOString()
-        }
-      }
-    }
-    
-    return { message: 'Success', timestamp: new Date().toISOString() }
-  }
-
   const handleTryEndpoint = async (endpoint: ParsedRoute) => {
     setSelectedEndpoint(endpoint)
     setLoadingResponse(true)
@@ -220,26 +94,47 @@ function App() {
     const startTime = Date.now()
     
     try {
+      // Ask the server for a valid request for this route (path params
+      // filled in, required query params, generated body), then send it
+      const sampleResponse = await fetch(`/api/sample-request?route=${encodeURIComponent(`${endpoint.method} ${endpoint.path}`)}`)
+      const sample = sampleResponse.ok
+        ? await sampleResponse.json()
+        : { path: endpoint.path, query: {}, body: undefined }
+
+      const query = new URLSearchParams()
+      for (const [name, value] of Object.entries(sample.query || {})) {
+        query.set(name, String(value))
+      }
+      // Mock controls from the response panel
+      if (mockOptions.status) query.set('__status', mockOptions.status)
+      if (mockOptions.delay) query.set('__delay', mockOptions.delay)
+      if (mockOptions.useExamples) query.set('__example', 'true')
+      if (!mockOptions.validate) query.set('__validate', 'false')
+      const queryString = query.toString()
+      const url = queryString ? `${sample.path}?${queryString}` : sample.path
+
       // Make real HTTP request to the backend mock server
-      const response = await fetch(endpoint.path, {
+      const response = await fetch(url, {
         method: endpoint.method,
         headers: {
           'Content-Type': 'application/json',
         },
-        // Add sample request body for POST requests
-        ...(endpoint.method === 'POST' && {
-          body: JSON.stringify(getSampleRequestBody(endpoint))
+        ...(sample.body !== undefined && ['POST', 'PUT', 'PATCH'].includes(endpoint.method) && {
+          body: JSON.stringify(sample.body)
         })
       })
 
       const responseTime = Date.now() - startTime
-      let responseBody = null
-
-      try {
-        responseBody = await response.json()
-      } catch (err) {
-        // Handle non-JSON responses
-        responseBody = await response.text()
+      // Read the body once: JSON when possible, raw text otherwise, null when
+      // empty (e.g. 204 No Content)
+      const responseText = await response.text()
+      let responseBody: any = null
+      if (responseText) {
+        try {
+          responseBody = JSON.parse(responseText)
+        } catch (err) {
+          responseBody = responseText
+        }
       }
 
       setResponse({
@@ -256,7 +151,7 @@ function App() {
         id: Date.now(),
         time,
         method: endpoint.method,
-        path: endpoint.path,
+        path: url,
         status: response.status,
         ms: responseTime
       }
@@ -291,32 +186,6 @@ function App() {
     } finally {
       setLoadingResponse(false)
     }
-  }
-
-  const getSampleRequestBody = (endpoint: ParsedRoute) => {
-    if (endpoint.path.includes('/customers')) {
-      return {
-        firstName: 'Alice',
-        lastName: 'Johnson',
-        email: 'alice.johnson@example.com',
-        phone: '+1234567890',
-        age: 32
-      }
-    } else if (endpoint.path.includes('/orders')) {
-      return {
-        customerId: '123e4567-e89b-12d3-a456-426614174000',
-        totalAmount: 199.99,
-        currency: 'USD',
-        items: [
-          {
-            productName: 'Wireless Headphones',
-            quantity: 1,
-            unitPrice: 199.99
-          }
-        ]
-      }
-    }
-    return {}
   }
 
   const handleRevalidate = async () => {
@@ -473,6 +342,8 @@ function App() {
               onTryEndpoint={handleTryEndpoint}
               response={response}
               loading={loadingResponse}
+              mockOptions={mockOptions}
+              onMockOptionsChange={setMockOptions}
               accentColor={accentColor}
             />
           </div>

@@ -16,7 +16,7 @@
     "dev:client": "vite",
     "build": "vite build && node site/build.js",
     "preview": "vite preview",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [
     "openapi",
@@ -35,8 +35,11 @@
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
     "@vitejs/plugin-react": "^4.0.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "autoprefixer": "^10.5.0",
     "commander": "^11.1.0",
+    "compression": "^1.7.4",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
     "js-yaml": "^4.1.0",

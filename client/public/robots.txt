@@ -1,4 +1,6 @@
 User-agent: *
 Allow: /
+Disallow: /m/
+Disallow: /api/
 
 Sitemap: https://mirageapi.com/sitemap.xml

@@ -56,6 +56,14 @@ const NAME_SUFFIXES = [
   'zipcode', 'username', 'country', 'street', 'email', 'phone', 'city', 'url'
 ];
 
+// True if a schema or anything nested inside it carries an example
+function hasExample(schema, depth = 0) {
+  if (!schema || typeof schema !== 'object' || depth > 10) return false;
+  if (schema.example !== undefined || (Array.isArray(schema.examples) && schema.examples.length)) return true;
+  if (schema.items && hasExample(schema.items, depth + 1)) return true;
+  return Object.values(schema.properties || {}).some(p => hasExample(p, depth + 1));
+}
+
 class DataGenerator {
   constructor() {
     this.faker = faker;
@@ -156,18 +164,28 @@ class DataGenerator {
   }
 
   _generateStringWithConstraints(minLength, maxLength) {
-    const min = minLength || 5;
-    const max = maxLength || 50;
+    // Defaults (5-50) must not break an explicit bound on the other side,
+    // e.g. maxLength: 3 with no minLength
+    const max = maxLength ?? Math.max(50, minLength ?? 0);
+    const min = minLength ?? Math.min(5, max);
     
     const length = Math.floor(Math.random() * (max - min + 1)) + min;
     
     if (length <= 10) {
       return this.faker.lorem.word().substring(0, length).padEnd(length, 'a');
-    } else if (length <= 30) {
-      return this.faker.lorem.words(Math.ceil(length / 6)).substring(0, length);
-    } else {
-      return this.faker.lorem.sentence().substring(0, length);
     }
+
+    // Words for short strings, sentences for long ones - extended until the
+    // text reaches the target length, then cut to exactly that length
+    let text = length <= 30
+      ? this.faker.lorem.words(Math.ceil(length / 6))
+      : this.faker.lorem.sentence();
+    while (text.length < length) {
+      text += ` ${this.faker.lorem.word()}`;
+    }
+    text = text.substring(0, length);
+    // Don't end on a space (e.g. "succurro strenuus ")
+    return text.endsWith(' ') ? `${text.slice(0, -1)}a` : text;
   }
 
   _generateFromPattern(pattern) {
@@ -357,7 +375,14 @@ class DataGenerator {
     return merged;
   }
 
-  generateResponseData(responseSchema) {
+  // responseSchema is a parser response entry: { schema, example }.
+  // With useExamples, the spec's response-level example wins, then
+  // schema/property-level examples (see generateFromExamples).
+  generateResponseData(responseSchema, { useExamples = false } = {}) {
+    if (useExamples && responseSchema && responseSchema.example !== undefined) {
+      return responseSchema.example;
+    }
+
     if (!responseSchema || !responseSchema.schema) {
       return {
         message: "Success",
@@ -366,7 +391,45 @@ class DataGenerator {
       };
     }
 
-    return this.generateFromSchema(responseSchema.schema);
+    return useExamples
+      ? this.generateFromExamples(responseSchema.schema)
+      : this.generateFromSchema(responseSchema.schema);
+  }
+
+  // Build a value from the `example` keywords in a schema: a schema-level
+  // example is used as-is; objects take each property's example; required
+  // properties without one are generated; arrays hold a single item. Anything
+  // with no example at all falls back to normal generation.
+  generateFromExamples(schema, depth = 0, fieldName = undefined) {
+    if (!schema || typeof schema !== 'object' || depth > 10) {
+      return this.generateFromSchema(schema, depth, fieldName);
+    }
+    if (schema.example !== undefined) {
+      return schema.example;
+    }
+    if (Array.isArray(schema.examples) && schema.examples.length > 0) {
+      return schema.examples[0]; // OpenAPI 3.1 / JSON Schema style
+    }
+    if (schema.allOf) {
+      return this.generateFromExamples(this._mergeSchemas(schema.allOf), depth + 1, fieldName);
+    }
+    if (schema.oneOf || schema.anyOf) {
+      return this.generateFromExamples((schema.oneOf || schema.anyOf)[0], depth + 1, fieldName);
+    }
+    if (schema.type === 'array' && schema.items) {
+      return [this.generateFromExamples(schema.items, depth + 1, fieldName)];
+    }
+    if (schema.type === 'object' || schema.properties) {
+      const obj = {};
+      const required = schema.required || [];
+      for (const [propName, propSchema] of Object.entries(schema.properties || {})) {
+        if (required.includes(propName) || hasExample(propSchema)) {
+          obj[propName] = this.generateFromExamples(propSchema, depth + 1, propName);
+        }
+      }
+      return obj;
+    }
+    return this.generateFromSchema(schema, depth, fieldName);
   }
 
   generateRequestEcho(requestBody, generatedId = null) {
