@@ -7,6 +7,7 @@ export interface ParsedRoute {
   parameters?: Parameter[];
   requestBodySchema?: any;
   summary?: string;
+  tags?: string[];
   group?: string;
   id?: number;
 }
@@ -26,6 +27,7 @@ export interface ParseSpecResponse {
     version?: string;
     description?: string;
   };
+  specVersion?: string;
   validation?: any;
 }
 

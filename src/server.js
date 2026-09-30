@@ -6,10 +6,12 @@
 
 const express = require('express');
 const session = require('express-session');
+const compression = require('compression');
 const crypto = require('crypto');
 const path = require('path');
 const DataGenerator = require('./generator');
 const SpecParser = require('./parser');
+const { fetchSpecText, SafeFetchError } = require('./safe-fetch');
 
 class MockServer {
   constructor(parsedPaths, options = {}) {
@@ -21,6 +23,10 @@ class MockServer {
     // Routes from the --spec file in CLI mode; web mode loads specs per session
     this.cliPaths = parsedPaths || {};
 
+    // Railway terminates HTTPS in front of the app; trust its proxy headers so
+    // req.protocol and req.ip are the client's.
+    this.app.set('trust proxy', 1);
+    this.app.use(compression());
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
     
@@ -102,6 +108,12 @@ class MockServer {
     });
 
     if (this.webMode) {
+      // The start command serves a prebuilt dist/ (yarn build runs in the
+      // deploy's build phase). Make a missing build obvious in the logs.
+      if (!require('fs').existsSync(path.join(__dirname, '../dist/app/index.html'))) {
+        console.error('⚠️  dist/ is missing or incomplete - run `yarn build` before `yarn start:web`.');
+      }
+
       // Serve examples folder for sample specs
       this.app.use('/examples', express.static(path.join(__dirname, '../examples')));
       
@@ -147,6 +159,43 @@ class MockServer {
       }
     });
 
+    // Load a spec from a public URL. The fetch refuses private/internal
+    // addresses (see src/safe-fetch.js) because this runs on a public server.
+    this.app.post('/api/parse-spec-url', async (req, res) => {
+      const { url } = req.body || {};
+      if (!url || typeof url !== 'string') {
+        return res.status(400).json({ error: 'A spec URL is required', message: 'A spec URL is required' });
+      }
+
+      let text;
+      try {
+        text = await fetchSpecText(url.trim());
+      } catch (error) {
+        const message = error instanceof SafeFetchError ? error.message : 'Could not fetch the URL';
+        return res.status(400).json({ error: 'Failed to fetch spec', message });
+      }
+
+      try {
+        const type = looksLikeJson(text) ? 'json' : 'yaml';
+        const result = await this._loadSpec(this._getSessionData(req), text, type);
+        res.json({ ...result, spec: text, type });
+      } catch (error) {
+        res.status(400).json({ error: 'Failed to parse OpenAPI spec', message: error.message });
+      }
+    });
+
+    // A ready-to-send request for a route: path parameters filled in,
+    // required query parameters added, and a body generated from the request
+    // schema. Used by the app's tester so requests pass validation for any spec.
+    this.app.get('/api/sample-request', (req, res) => {
+      const sessionData = this._getSessionData(req);
+      const route = sessionData.parsedPaths[req.query.route];
+      if (!route) {
+        return res.status(404).json({ error: 'Route not found' });
+      }
+      res.json(this._sampleRequest(route));
+    });
+
     this.app.get('/api/routes', (req, res) => {
       const sessionData = this._getSessionData(req);
       const routes = Object.entries(sessionData.parsedPaths).map(([key, info]) => ({
@@ -156,7 +205,9 @@ class MockServer {
         hasRequestBody: !!info.requestBody,
         responseTypes: Object.keys(info.responses || {}),
         parameters: info.parameters || [],
-        requestBodySchema: info.requestBody?.schema || null
+        requestBodySchema: info.requestBody?.schema || null,
+        tags: info.tags || [],
+        summary: info.summary
       }));
       
       res.json({ routes, sessionId: sessionData.sessionId });
@@ -275,8 +326,45 @@ class MockServer {
       success: true,
       paths: sessionData.parsedPaths,
       info: specParser.getSpec()?.info || {},
+      specVersion: specParser.getSpecVersion(),
       validation: specParser.getValidationResults(),
       sessionId: sessionData.sessionId
+    };
+  }
+
+  // Build { path, query, body } for a route using generated values
+  _sampleRequest(route) {
+    const pathParams = {};
+    const query = {};
+    for (const param of route.parameters || []) {
+      if (param.in === 'path') {
+        pathParams[param.name] = this.generator.generateFromSchema(param.schema, 0, param.name);
+      } else if (param.in === 'query' && param.required) {
+        query[param.name] = this.generator.generateFromSchema(param.schema, 0, param.name);
+      }
+    }
+    const path = route.path.replace(/\{([^}]+)\}/g, (_, name) =>
+      encodeURIComponent(String(pathParams[name] ?? name)));
+
+    const body = route.requestBody?.schema
+      ? this.generator.generateFromSchema(withoutReadOnly(route.requestBody.schema))
+      : undefined;
+
+    return { path, query, body };
+  }
+
+  // Per-request mock controls from query parameters (?__example=true) or
+  // headers (Prefer / X-Mirage-*). The __ query parameters are MirageAPI's own
+  // and are ignored when matching and validating the request.
+  _readControls(req) {
+    const q = req.query || {};
+    const prefer = String(req.headers.prefer || '').toLowerCase();
+    const truthy = v => v !== undefined && ['1', 'true', 'yes', ''].includes(String(v).toLowerCase());
+
+    return {
+      useExamples: truthy(q.__example) ||
+        truthy(req.headers['x-mirage-example']) ||
+        /(^|[\s,;])example(=|$|[\s,;])/.test(prefer)
     };
   }
 
@@ -326,7 +414,7 @@ class MockServer {
     if (!match) {
       return false;
     }
-    this._handleRequest(req, res, match.route);
+    this._handleRequest(req, res, match.route, this._readControls(req));
     return true;
   }
 
@@ -423,14 +511,14 @@ class MockServer {
     return req.accepts(['json', 'html']) === 'html';
   }
 
-  _handleRequest(req, res, routeInfo) {
-    const { method, responses, requestBody } = routeInfo;
+  _handleRequest(req, res, routeInfo, controls = {}) {
+    const { method } = routeInfo;
 
     try {
       if (['POST', 'PUT', 'PATCH'].includes(method)) {
-        return this._handleMutationRequest(req, res, routeInfo);
+        return this._handleMutationRequest(req, res, routeInfo, controls);
       } else {
-        return this._handleQueryRequest(req, res, routeInfo);
+        return this._handleQueryRequest(req, res, routeInfo, controls);
       }
     } catch (error) {
       console.error(`Error handling request: ${error.message}`);
@@ -442,13 +530,13 @@ class MockServer {
     }
   }
 
-  _handleQueryRequest(req, res, routeInfo) {
+  _handleQueryRequest(req, res, routeInfo, controls = {}) {
     const { responses } = routeInfo;
     
     const successResponse = responses['200'] || responses['201'] || responses['default'];
     
     if (successResponse) {
-      const responseData = this.generator.generateResponseData(successResponse);
+      const responseData = this.generator.generateResponseData(successResponse, controls);
       return res.status(200).json(responseData);
     } else {
       return res.status(200).json({
@@ -459,10 +547,16 @@ class MockServer {
     }
   }
 
-  _handleMutationRequest(req, res, routeInfo) {
+  _handleMutationRequest(req, res, routeInfo, controls = {}) {
     const { responses, requestBody } = routeInfo;
     
-    if (requestBody && Object.keys(req.body).length > 0) {
+    // In example mode the spec's example response wins over echoing the body
+    const exampleResponse = responses['201'] || responses['200'];
+    if (controls.useExamples && exampleResponse && exampleResponse.example !== undefined) {
+      return res.status(201).json(exampleResponse.example);
+    }
+
+    if (requestBody && req.body && Object.keys(req.body).length > 0) {
       const generatedId = this.generator.faker.string.uuid();
       const echoResponse = this.generator.generateRequestEcho(req.body, generatedId);
       return res.status(201).json(echoResponse);
@@ -471,7 +565,7 @@ class MockServer {
     const successResponse = responses['201'] || responses['200'] || responses['default'];
     
     if (successResponse) {
-      const responseData = this.generator.generateResponseData(successResponse);
+      const responseData = this.generator.generateResponseData(successResponse, controls);
       return res.status(201).json(responseData);
     } else {
       return res.status(201).json({
@@ -561,4 +655,39 @@ class MockServer {
   }
 }
 
+function looksLikeJson(text) {
+  const trimmed = text.trimStart();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return false;
+  try {
+    JSON.parse(trimmed);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Copy of a schema without readOnly properties (e.g. a server-generated id),
+// used for request bodies
+function withoutReadOnly(schema, depth = 0) {
+  if (!schema || typeof schema !== 'object' || depth > 10) return schema;
+  const copy = { ...schema };
+  if (schema.properties) {
+    copy.properties = {};
+    for (const [name, prop] of Object.entries(schema.properties)) {
+      if (!prop || !prop.readOnly) {
+        copy.properties[name] = withoutReadOnly(prop, depth + 1);
+      }
+    }
+    if (Array.isArray(schema.required)) {
+      copy.required = schema.required.filter(name => name in copy.properties);
+    }
+  }
+  if (schema.items) copy.items = withoutReadOnly(schema.items, depth + 1);
+  for (const key of ['allOf', 'oneOf', 'anyOf']) {
+    if (Array.isArray(schema[key])) copy[key] = schema[key].map(s => withoutReadOnly(s, depth + 1));
+  }
+  return copy;
+}
+
 module.exports = MockServer;
+module.exports.withoutReadOnly = withoutReadOnly;

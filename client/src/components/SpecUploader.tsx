@@ -1,6 +1,80 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { ParsedRoute, ParseSpecResponse, ApiError } from '../types/api'
 import Icon from './Icon'
+
+interface SpecMeta {
+  name: string
+  size: number
+  version: string
+}
+
+// Group endpoints by their first OpenAPI tag, else by the first path segment
+const groupFor = (route: ParsedRoute): string => {
+  const raw = route.tags?.[0] || route.path.split('/').filter(Boolean)[0] || 'API'
+  return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
+
+const formatSize = (bytes: number): string =>
+  bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
+
+const versionLabel = (version: string): string =>
+  version.startsWith('2') ? `Swagger ${version}` : `OpenAPI ${version}`
+
+// Last path segment of a URL, e.g. "petstore.yaml"
+const nameFromUrl = (url: string): string => {
+  try {
+    return new URL(url).pathname.split('/').filter(Boolean).pop() || url
+  } catch {
+    return url
+  }
+}
+
+const errorStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  marginTop: 12,
+  padding: '8px 12px',
+  borderRadius: 'var(--radius)',
+  border: '1px solid rgba(224,62,53,0.3)',
+  background: 'rgba(224,62,53,0.08)',
+  color: 'var(--red)',
+  fontSize: 12
+}
+
+const modalBackdropStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(0,0,0,0.8)',
+  backdropFilter: 'blur(4px)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 100000
+}
+
+const modalBoxStyle: React.CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius2)',
+  padding: '24px',
+  width: '90%',
+  maxWidth: '600px',
+  maxHeight: '80vh',
+  overflow: 'auto'
+}
+
+const secondaryButtonStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  borderRadius: 'var(--radius)',
+  border: '1px solid var(--border2)',
+  background: 'var(--surface2)',
+  color: 'var(--text2)',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'var(--display)'
+}
 
 interface SpecUploaderProps {
   onSpecParsed: (routes: ParsedRoute[], info: any, validation?: any) => void
@@ -24,9 +98,31 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
   const [pasteContent, setPasteContent] = useState('')
   const [specFormat, setSpecFormat] = useState<'yaml' | 'json'>('yaml')
   const [originalSpec, setOriginalSpec] = useState('')
+  const [specMeta, setSpecMeta] = useState<SpecMeta | null>(null)
+  const [showUrlInput, setShowUrlInput] = useState(false)
+  const [urlInput, setUrlInput] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
-  const parseSpecFromText = async (spec: string, type: 'yaml' | 'json') => {
+  // Common tail of every load path: remember the spec, fetch the routes and
+  // hand everything to the app
+  const finishLoad = async (result: ParseSpecResponse, specText: string, name: string) => {
+    setOriginalSpec(specText)
+    setSpecMeta({ name, size: new Blob([specText]).size, version: result.specVersion || '' })
+
+    const routesResponse = await fetch('/api/routes')
+    const routesData = await routesResponse.json()
+    const routesWithGroups = routesData.routes.map((route: ParsedRoute, index: number) => ({
+      ...route,
+      id: index + 1,
+      group: groupFor(route)
+    }))
+
+    onSpecParsed(routesWithGroups, result.info, result.validation)
+  }
+
+  const parseSpecFromText = async (spec: string, type: 'yaml' | 'json', name: string) => {
     setIsLoading(true)
+    setError(null)
     
     try {
       // Parse the spec using the backend API
@@ -44,38 +140,52 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
         throw new Error((parseData as ApiError).message || 'Failed to parse spec')
       }
 
-      const result = parseData as ParseSpecResponse
-      
-      // Store original spec for editing
-      console.log('Storing original spec for editing, length:', spec.length)
-      setOriginalSpec(spec)
-      
-      // Get the routes from the API
-      const routesResponse = await fetch('/api/routes')
-      const routesData = await routesResponse.json()
-      
-      // Add groups based on the path structure
-      const routesWithGroups = routesData.routes.map((route: ParsedRoute, index: number) => ({
-        ...route,
-        id: index + 1,
-        group: route.path.startsWith('/customers') ? 'Customers' : 
-               route.path.startsWith('/orders') ? 'Orders' : 'API'
-      }))
-      
-      // Store original spec for editing
-      setOriginalSpec(spec)
-      
-      onSpecParsed(routesWithGroups, result.info, result.validation)
+      await finishLoad(parseData as ParseSpecResponse, spec, name)
       
       // Close modal after successful parsing
       setShowPasteInput(false)
       setPasteContent('')
-      setIsLoading(false)
     } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to parse spec')
+    } finally {
       setIsLoading(false)
-      console.error('Failed to parse spec:', err)
     }
   }
+
+  // Fetched server-side with SSRF protection (src/safe-fetch.js)
+  const loadFromUrl = async (url: string) => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/parse-spec-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to load spec from URL')
+      }
+
+      await finishLoad(data as ParseSpecResponse, data.spec, nameFromUrl(url))
+      setShowUrlInput(false)
+      setUrlInput('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load spec from URL')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // /app/?spec=<url> opens that spec straight away, so people can share
+  // "open this spec in MirageAPI" links
+  useEffect(() => {
+    const specUrl = new URLSearchParams(window.location.search).get('spec')
+    if (specUrl) {
+      loadFromUrl(specUrl)
+    }
+  }, [])
 
   const handleFileUpload = (file: File) => {
     const reader = new FileReader()
@@ -83,7 +193,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
       const content = e.target?.result as string
       if (content) {
         const fileType = file.name.endsWith('.json') ? 'json' : 'yaml'
-        parseSpecFromText(content, fileType)
+        parseSpecFromText(content, fileType, file.name)
       }
     }
     reader.readAsText(file)
@@ -103,62 +213,24 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
     if (file) {
       handleFileUpload(file)
     } else {
-      console.error('Please upload a .yaml, .yml, or .json file')
+      setError('Please upload a .yaml, .yml, or .json file')
     }
   }
 
   const handlePaste = () => {
     if (pasteContent.trim()) {
-      parseSpecFromText(pasteContent, specFormat)
+      parseSpecFromText(pasteContent, specFormat, specMeta?.name || 'Pasted spec')
     }
   }
 
   const loadDemo = async () => {
-    setIsLoading(true)
-    
     try {
       // Load the actual sample spec from the examples folder
       const response = await fetch('/examples/sample-spec.yaml')
       const sampleSpec = await response.text()
-      
-      // Parse the spec using the backend API
-      const parseResponse = await fetch('/api/parse-spec', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ spec: sampleSpec, type: 'yaml' }),
-      })
-
-      const parseData: ParseSpecResponse | ApiError = await parseResponse.json()
-
-      if (!parseResponse.ok) {
-        throw new Error((parseData as ApiError).message || 'Failed to parse spec')
-      }
-
-      const result = parseData as ParseSpecResponse
-      
-      // Get the routes from the API
-      const routesResponse = await fetch('/api/routes')
-      const routesData = await routesResponse.json()
-      
-      // Add groups based on the path structure
-      const routesWithGroups = routesData.routes.map((route: ParsedRoute, index: number) => ({
-        ...route,
-        id: index + 1,
-        group: route.path.startsWith('/customers') ? 'Customers' : 
-               route.path.startsWith('/orders') ? 'Orders' : 'API'
-      }))
-      
-      // Store original spec for editing
-      console.log('Demo loaded - storing spec length:', sampleSpec.length)
-      setOriginalSpec(sampleSpec)
-      
-      onSpecParsed(routesWithGroups, result.info, result.validation)
-      setIsLoading(false)
+      await parseSpecFromText(sampleSpec, 'yaml', 'sample-spec.yaml')
     } catch (err) {
-      setIsLoading(false)
-      console.error('Failed to load demo spec:', err)
+      setError('Failed to load the demo spec')
     }
   }
 
@@ -171,6 +243,8 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
     setSpecFormat('yaml')
     setDragging(false)
     setOriginalSpec('')
+    setSpecMeta(null)
+    setError(null)
   }
 
   const editSpec = () => {
@@ -214,11 +288,13 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Icon name="CheckCircle" size={15} color="var(--green)" strokeWidth={2} />
           <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}>
-            sample-spec.yaml
+            {specMeta?.name || 'spec'}
           </span>
-          <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>
-            14.2 KB
-          </span>
+          {specMeta && (
+            <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>
+              {formatSize(specMeta.size)}
+            </span>
+          )}
           <div style={{
             padding: '2px 8px',
             borderRadius: 3,
@@ -229,7 +305,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
             fontWeight: 600,
             letterSpacing: '0.06em'
           }}>
-            VALID • OpenAPI 3.0
+            VALID{specMeta?.version ? ` • ${versionLabel(specMeta.version)}` : ''}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -441,6 +517,13 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
               </div>
             </div>
             
+            {error && (
+              <div role="alert" style={{ ...errorStyle, margin: '12px 0 0' }}>
+                <Icon name="AlertCircle" size={13} strokeWidth={2} />
+                {error}
+              </div>
+            )}
+
             <div style={{
               display: 'flex',
               gap: 8,
@@ -609,6 +692,29 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
             <Icon name="Clipboard" size={14} strokeWidth={1.5} />
             Paste
           </button>
+          <button
+            onClick={() => { setError(null); setShowUrlInput(true) }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 16px',
+              borderRadius: 'var(--radius)',
+              border: `1px solid ${accentColor}30`,
+              background: `linear-gradient(135deg, ${accentColor}12, ${accentColor}08)`,
+              color: accentColor,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'var(--display)',
+              transition: 'all 0.2s ease',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+            }}
+            className="spec-upload-button"
+          >
+            <Icon name="Link" size={14} strokeWidth={1.5} />
+            URL
+          </button>
 
           <div style={{ width: 1, height: 24, background: 'var(--border2)', margin: '0 4px' }} className="spec-button-divider" />
 
@@ -637,6 +743,80 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
           </button>
         </div>
       </div>
+
+      {error && !showPasteInput && !showUrlInput && (
+        <div role="alert" style={errorStyle}>
+          <Icon name="AlertCircle" size={13} strokeWidth={2} />
+          {error}
+        </div>
+      )}
+
+      {/* Load from URL Modal */}
+      {showUrlInput && (
+        <div
+          style={modalBackdropStyle}
+          onClick={() => setShowUrlInput(false)}
+        >
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (urlInput.trim()) loadFromUrl(urlInput.trim())
+            }}
+            style={{ ...modalBoxStyle, maxWidth: 560 }}
+          >
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--display)', margin: '0 0 6px' }}>
+              Load spec from URL
+            </h3>
+            <p style={{ fontSize: 12, color: 'var(--text3)', margin: '0 0 14px' }}>
+              A public link to an OpenAPI or Swagger file (JSON or YAML). GitHub file links work too.
+            </p>
+            <input
+              autoFocus
+              type="url"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder="https://raw.githubusercontent.com/.../openapi.yaml"
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: 'var(--radius)',
+                border: '1px solid var(--border2)',
+                background: 'var(--surface2)',
+                color: 'var(--text)',
+                fontFamily: 'var(--mono)',
+                fontSize: 12,
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+            {error && (
+              <div role="alert" style={{ ...errorStyle, margin: '12px 0 0' }}>
+                <Icon name="AlertCircle" size={13} strokeWidth={2} />
+                {error}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setShowUrlInput(false)} style={secondaryButtonStyle}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!urlInput.trim() || isLoading}
+                style={{
+                  ...secondaryButtonStyle,
+                  border: `1px solid ${accentColor}40`,
+                  background: accentColor + '20',
+                  color: accentColor,
+                  opacity: (!urlInput.trim() || isLoading) ? 0.5 : 1
+                }}
+              >
+                {isLoading ? 'Loading...' : 'Load Spec'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       
       {/* Paste Input Modal */}
       {showPasteInput && (
@@ -805,6 +985,13 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
               </div>
             </div>
             
+            {error && (
+              <div role="alert" style={{ ...errorStyle, margin: '12px 0 0' }}>
+                <Icon name="AlertCircle" size={13} strokeWidth={2} />
+                {error}
+              </div>
+            )}
+
             <div style={{
               display: 'flex',
               gap: 8,

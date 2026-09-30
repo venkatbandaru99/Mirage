@@ -56,6 +56,14 @@ const NAME_SUFFIXES = [
   'zipcode', 'username', 'country', 'street', 'email', 'phone', 'city', 'url'
 ];
 
+// True if a schema or anything nested inside it carries an example
+function hasExample(schema, depth = 0) {
+  if (!schema || typeof schema !== 'object' || depth > 10) return false;
+  if (schema.example !== undefined || (Array.isArray(schema.examples) && schema.examples.length)) return true;
+  if (schema.items && hasExample(schema.items, depth + 1)) return true;
+  return Object.values(schema.properties || {}).some(p => hasExample(p, depth + 1));
+}
+
 class DataGenerator {
   constructor() {
     this.faker = faker;
@@ -357,7 +365,14 @@ class DataGenerator {
     return merged;
   }
 
-  generateResponseData(responseSchema) {
+  // responseSchema is a parser response entry: { schema, example }.
+  // With useExamples, the spec's response-level example wins, then
+  // schema/property-level examples (see generateFromExamples).
+  generateResponseData(responseSchema, { useExamples = false } = {}) {
+    if (useExamples && responseSchema && responseSchema.example !== undefined) {
+      return responseSchema.example;
+    }
+
     if (!responseSchema || !responseSchema.schema) {
       return {
         message: "Success",
@@ -366,7 +381,45 @@ class DataGenerator {
       };
     }
 
-    return this.generateFromSchema(responseSchema.schema);
+    return useExamples
+      ? this.generateFromExamples(responseSchema.schema)
+      : this.generateFromSchema(responseSchema.schema);
+  }
+
+  // Build a value from the `example` keywords in a schema: a schema-level
+  // example is used as-is; objects take each property's example; required
+  // properties without one are generated; arrays hold a single item. Anything
+  // with no example at all falls back to normal generation.
+  generateFromExamples(schema, depth = 0, fieldName = undefined) {
+    if (!schema || typeof schema !== 'object' || depth > 10) {
+      return this.generateFromSchema(schema, depth, fieldName);
+    }
+    if (schema.example !== undefined) {
+      return schema.example;
+    }
+    if (Array.isArray(schema.examples) && schema.examples.length > 0) {
+      return schema.examples[0]; // OpenAPI 3.1 / JSON Schema style
+    }
+    if (schema.allOf) {
+      return this.generateFromExamples(this._mergeSchemas(schema.allOf), depth + 1, fieldName);
+    }
+    if (schema.oneOf || schema.anyOf) {
+      return this.generateFromExamples((schema.oneOf || schema.anyOf)[0], depth + 1, fieldName);
+    }
+    if (schema.type === 'array' && schema.items) {
+      return [this.generateFromExamples(schema.items, depth + 1, fieldName)];
+    }
+    if (schema.type === 'object' || schema.properties) {
+      const obj = {};
+      const required = schema.required || [];
+      for (const [propName, propSchema] of Object.entries(schema.properties || {})) {
+        if (required.includes(propName) || hasExample(propSchema)) {
+          obj[propName] = this.generateFromExamples(propSchema, depth + 1, propName);
+        }
+      }
+      return obj;
+    }
+    return this.generateFromSchema(schema, depth, fieldName);
   }
 
   generateRequestEcho(requestBody, generatedId = null) {
