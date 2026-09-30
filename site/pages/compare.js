@@ -4,7 +4,7 @@
 
 const { esc } = require('../layout');
 
-const REVIEWED = '2026-09-29';
+const REVIEWED = '2026-09-30';
 const REVIEWED_LABEL = 'September 2026';
 
 const COMPETITORS = [
@@ -14,28 +14,31 @@ const COMPETITORS = [
     title: 'MirageAPI vs Prism: OpenAPI Mock Server Comparison',
     description: 'Compare MirageAPI and Stoplight Prism for mocking OpenAPI specs: setup, data generation, request validation and when to choose each.',
     summary: 'Browser-based and zero-install vs a CLI with strict request validation.',
-    intro: 'Stoplight Prism is a popular open-source (Apache 2.0) command-line mock server for OpenAPI. Both tools turn a spec into a running mock, but they optimise for different things: MirageAPI for getting a realistic mock running instantly with nothing to install, Prism for contract accuracy.',
+    intro: 'Stoplight Prism is a popular open-source (Apache 2.0) command-line mock server for OpenAPI. Both tools turn a spec into a running mock and validate requests against it, but they optimise for different things: MirageAPI for getting a realistic, shareable mock running instantly with nothing to install, Prism for running close to your codebase and checking a real API against the contract.',
     rows: [
       ['How you run it', 'In the browser, or a Node.js CLI', 'Node.js CLI (npm or Docker)'],
       ['Install required', 'No (web app)', 'Yes'],
       ['Spec formats', 'OpenAPI 2.0, 3.0, 3.1 (JSON/YAML)', 'OpenAPI 2.0, 3.0, 3.1; Postman collections'],
       ['Response data', 'Always freshly generated from the schema', 'Examples from the spec by default; generated data in dynamic mode'],
-      ['Uses spec examples', 'Not yet', 'Yes'],
-      ['Request validation', 'Not yet', 'Yes'],
-      ['Choose response code per request', 'Not yet', 'Yes, via the Prefer header'],
+      ['Uses spec examples', 'Yes, opt-in (Prefer: example)', 'Yes, by default'],
+      ['Request validation', 'Yes', 'Yes'],
+      ['Choose response code per request', 'Yes (Prefer: code or ?__status)', 'Yes, via the Prefer header'],
+      ['Latency simulation', 'Yes (?__delay)', 'Not built in'],
+      ['Shareable public mock URL', 'Yes, free (7 days)', 'Via the Stoplight platform'],
       ['Validation proxy to a real API', 'No', 'Yes'],
       ['Built-in request tester UI', 'Yes', 'No'],
       ['Spec quality report', 'Yes', 'Validates the spec on load'],
       ['Price', 'Free, MIT-licensed', 'Free, Apache 2.0']
     ],
     chooseThem: [
-      'You need incoming requests validated against the contract.',
-      'Your spec has carefully written examples you want returned verbatim.',
-      'You want to proxy to a real server and check responses against the spec.'
+      'You want to proxy to a real server and check its responses against the spec.',
+      'Your spec has carefully written examples you want returned by default.',
+      'You mock Postman collections as well as OpenAPI specs.'
     ],
     chooseUs: [
       'You want a working mock in seconds without installing anything.',
       'You want varied, realistic data on every call rather than the same example.',
+      'You want a public mock URL to share with teammates, a frontend or CI.',
       'Non-developers (PMs, QA, designers) need to explore the API in a browser.'
     ]
   },
@@ -53,21 +56,22 @@ const COMPETITORS = [
       ['Response data', 'Generated automatically from schema constraints', 'Templates you write, with Faker.js helpers'],
       ['Response rules and conditions', 'No', 'Yes'],
       ['Stateful CRUD', 'Not yet', 'Yes'],
-      ['Latency simulation', 'Not yet', 'Yes'],
+      ['Latency and status simulation', 'Yes, per request', 'Yes'],
+      ['Request validation against the spec', 'Yes', 'No'],
       ['Proxy to a real API', 'No', 'Yes'],
       ['Stays in sync when the spec changes', 'Yes — reload the spec', 'Re-import the spec'],
-      ['Team sharing / cloud hosting', 'Web app is hosted', 'Paid Mockoon Cloud plans'],
+      ['Team sharing / cloud hosting', 'Free share links (7 days)', 'Paid Mockoon Cloud plans'],
       ['Price', 'Free, MIT-licensed', 'Free, MIT-licensed; paid cloud plans']
     ],
     chooseThem: [
       'You want detailed control over each route, rule and response.',
-      'You need stateful CRUD behaviour or latency and error simulation today.',
+      'You need stateful CRUD behaviour today.',
       'You prefer a native desktop app.'
     ],
     chooseUs: [
       'Your OpenAPI spec already exists and should drive the mock.',
       'You don\'t want to write or maintain response templates.',
-      'You want to share a mock without anyone installing an app.'
+      'You want to share a mock URL without anyone installing an app or paying for cloud hosting.'
     ]
   },
   {
@@ -84,9 +88,10 @@ const COMPETITORS = [
       ['Response data', 'Generated from schema constraints', 'Defined per stub, with response templating'],
       ['Advanced request matching', 'Path and method', 'Headers, body, query, JSON path and more'],
       ['Record and playback', 'No', 'Yes'],
-      ['Fault and delay simulation', 'Not yet', 'Yes'],
+      ['Fault and delay simulation', 'Status codes and delays (no connection faults)', 'Yes'],
+      ['Validates requests against an OpenAPI spec', 'Yes', 'Via WireMock Cloud'],
       ['Stateful scenarios', 'Not yet', 'Yes'],
-      ['Browser UI', 'Yes', 'WireMock Cloud (commercial)'],
+      ['Browser UI and shareable URL', 'Yes, free', 'WireMock Cloud (commercial)'],
       ['Price', 'Free, MIT-licensed', 'Free, Apache 2.0; commercial WireMock Cloud']
     ],
     chooseThem: [

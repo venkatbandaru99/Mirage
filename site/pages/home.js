@@ -20,12 +20,16 @@ const FAQ = [
     a: 'In the web app your spec is kept in server memory for your browser session only (up to 24 hours). It is never written to a database. For fully private specs, run the open-source CLI on your own machine.'
   },
   {
+    q: 'Can I share a mock with my team?',
+    a: 'Yes. Click Share to get a public URL such as mirageapi.com/m/Ab3dE7xY that anyone, a frontend app or a CI job can call. Links last 7 days.'
+  },
+  {
     q: 'Can I run it locally or in CI?',
     a: 'Yes. Clone the repository and run node src/index.js --spec ./openapi.yaml --port 3000 to get a local mock server with every endpoint live.'
   },
   {
     q: 'Does MirageAPI validate incoming requests?',
-    a: 'Not yet. Today it focuses on generating realistic responses. If you need strict request validation, see our comparison with Prism.'
+    a: 'Yes. Path parameters, query parameters and JSON bodies are checked against the spec, and invalid requests get a 400 listing each problem. Validation is on by default and can be turned off per request, in the app or with --no-validate.'
   }
 ];
 
@@ -62,7 +66,7 @@ const body = `
       <p>Arrays, nested objects, <code>allOf</code>, <code>oneOf</code> and <code>anyOf</code> are all handled, so your frontend sees the shapes it will see in production.</p>
       <p><a href="/docs/#data-generation">See every supported rule →</a></p>
     </div>
-    <pre><code>$ curl http://localhost:3000/orders/42
+    <pre><code>$ curl http://localhost:3000/orders/ba7c859d-8a94-4044-abfa-2d6986a14936
 {
   "id": "ba7c859d-8a94-4044-abfa-2d6986a14936",
   "customerId": "4ad89051-d769-4100-8ae3-606b16840af8",
@@ -84,6 +88,8 @@ const body = `
       <div class="card"><h3>Frontend first</h3><p>Build UI against the contract before the backend exists. <a href="/guides/frontend-without-backend/">See how</a>.</p></div>
       <div class="card"><h3>Locked-down upstreams</h3><p>Integrate with systems you can't access from dev because of security or compliance rules.</p></div>
       <div class="card"><h3>Demos and prototypes</h3><p>Show a working flow with believable data without standing up any infrastructure.</p></div>
+      <div class="card"><h3>Share a live mock</h3><p>One click gives you a public URL your team, frontend or CI can call — no install, no account.</p></div>
+      <div class="card"><h3>Test the unhappy paths</h3><p>Force any status code, add latency, and get a 400 when a request breaks the contract.</p></div>
       <div class="card"><h3>Spec quality checks</h3><p>A validation report flags errors and gaps in your spec before anyone builds against it.</p></div>
     </div>
   </div>

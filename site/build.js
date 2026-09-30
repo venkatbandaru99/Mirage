@@ -35,7 +35,7 @@ const PAGES = [
 // Default <lastmod> for the sitemap. Bump it (or set `updated` on a page)
 // when content actually changes - Google ignores lastmod values that change
 // on every deploy without real content changes.
-const SITE_UPDATED = '2026-09-29';
+const SITE_UPDATED = '2026-09-30';
 
 // Pages that exist but aren't generated here (the Vite-built React app)
 const EXTRA_SITEMAP_ENTRIES = [

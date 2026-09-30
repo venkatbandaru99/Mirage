@@ -4,7 +4,7 @@
 
 const { esc, GITHUB_URL } = require('../layout');
 
-const UPDATED = '2026-09-29';
+const UPDATED = '2026-09-30';
 
 const GUIDES = [
   {
@@ -25,10 +25,11 @@ const GUIDES = [
   <h2>Option 1: In the browser (no install)</h2>
   <ol>
     <li>Open <a href="/app/">the MirageAPI app</a>.</li>
-    <li>Drag your spec onto the upload area, click <strong>Browse</strong>, or <strong>Paste</strong> it in. Click <strong>Load demo</strong> to use the sample spec.</li>
+    <li>Drag your spec onto the upload area, click <strong>Browse</strong>, <strong>Paste</strong> it in, or load it from a public <strong>URL</strong>. Click <strong>Load demo</strong> to use the sample spec.</li>
     <li>Check the validation panel. It lists errors, warnings and suggestions for your spec.</li>
     <li>Click <strong>Start Server</strong>.</li>
     <li>Select an endpoint such as <code>GET /customers</code> and send the request. Send it again — you get different data every time.</li>
+    <li>Click <strong>Share</strong> to get a public URL like <code>https://mirageapi.com/m/Ab3dE7xY</code> that teammates, apps and CI jobs can call.</li>
   </ol>
 
   <h2>Option 2: Locally with the CLI</h2>
@@ -39,7 +40,7 @@ yarn install
 
 node src/index.js --spec ./path/to/openapi.yaml --port 3000</code></pre>
   <p>Now call it like the real thing:</p>
-  <pre><code>$ curl http://localhost:3000/customers/123
+  <pre><code>$ curl http://localhost:3000/customers/123e4567-e89b-12d3-a456-426614174000
 {
   "id": "841d15c0-57d1-4083-a085-ca4b6f69e75f",
   …
@@ -49,6 +50,13 @@ node src/index.js --spec ./path/to/openapi.yaml --port 3000</code></pre>
   "createdAt": "2025-12-27T11:24:39.703Z"
 }</code></pre>
   <p>The <code>id</code> is a UUID because the spec says <code>format: uuid</code>, <code>age</code> is between 18 and 80 because of <code>minimum</code>/<code>maximum</code>, and <code>status</code> is one of the spec's <code>enum</code> values.</p>
+  <p>Requests are validated too: <code>/customers/123</code> gets a <code>400</code> because <code>123</code> isn't a UUID. Add <code>?__validate=false</code> to skip that.</p>
+
+  <h2>Testing error cases</h2>
+  <p>Force any status code or add latency to see how your client copes:</p>
+  <pre><code>curl -i "http://localhost:3000/customers?__status=500"
+curl "http://localhost:3000/customers?__delay=2000"
+curl -H "Prefer: code=404" http://localhost:3000/customers/123e4567-e89b-12d3-a456-426614174000</code></pre>
 
   <h2>Creating resources</h2>
   <p><code>POST</code>, <code>PUT</code> and <code>PATCH</code> requests echo your JSON body back with a generated <code>id</code>, so create flows work end to end:</p>
@@ -119,7 +127,10 @@ export default defineConfig({
   <h2>5. Switch to the real API</h2>
   <p>When the backend is ready, change <code>VITE_API_URL</code> (or the proxy target). Because both sides built against the same contract, integration is usually uneventful.</p>
 
-  <div class="callout">Just want to explore the API or show it to a stakeholder? You don't need the CLI — <a href="/app/">load the spec in the browser</a> and click Start Server.</div>
+  <div class="callout">Don't want to run anything locally? <a href="/app/">Load the spec in the browser</a>, click <strong>Share</strong>, and point <code>VITE_API_URL</code> at the shared URL (for example <code>https://mirageapi.com/m/Ab3dE7xY</code>). It's public and CORS-enabled.</div>
+
+  <h2>Test loading and error states</h2>
+  <p>Point the app at <code>…/customers?__delay=2000</code> to see your loading spinners, or <code>?__status=500</code> to check your error UI — no backend changes needed.</p>
 
   <h2>Related</h2>
   <ul>
@@ -135,7 +146,7 @@ function guidePage(g) {
 <article class="wrap narrow page">
   <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/">Home</a> / <a href="/guides/">Guides</a> / ${esc(g.h1)}</nav>
   <h1>${esc(g.h1)}</h1>
-  <p class="muted">Updated <time datetime="${UPDATED}">September 29, 2026</time></p>
+  <p class="muted">Updated <time datetime="${UPDATED}">September 30, 2026</time></p>
   ${g.body}
 </article>
 `;
