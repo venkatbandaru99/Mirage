@@ -164,18 +164,28 @@ class DataGenerator {
   }
 
   _generateStringWithConstraints(minLength, maxLength) {
-    const min = minLength || 5;
-    const max = maxLength || 50;
+    // Defaults (5-50) must not break an explicit bound on the other side,
+    // e.g. maxLength: 3 with no minLength
+    const max = maxLength ?? Math.max(50, minLength ?? 0);
+    const min = minLength ?? Math.min(5, max);
     
     const length = Math.floor(Math.random() * (max - min + 1)) + min;
     
     if (length <= 10) {
       return this.faker.lorem.word().substring(0, length).padEnd(length, 'a');
-    } else if (length <= 30) {
-      return this.faker.lorem.words(Math.ceil(length / 6)).substring(0, length);
-    } else {
-      return this.faker.lorem.sentence().substring(0, length);
     }
+
+    // Words for short strings, sentences for long ones - extended until the
+    // text reaches the target length, then cut to exactly that length
+    let text = length <= 30
+      ? this.faker.lorem.words(Math.ceil(length / 6))
+      : this.faker.lorem.sentence();
+    while (text.length < length) {
+      text += ` ${this.faker.lorem.word()}`;
+    }
+    text = text.substring(0, length);
+    // Don't end on a space (e.g. "succurro strenuus ")
+    return text.endsWith(' ') ? `${text.slice(0, -1)}a` : text;
   }
 
   _generateFromPattern(pattern) {
