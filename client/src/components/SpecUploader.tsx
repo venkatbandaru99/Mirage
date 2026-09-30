@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { ParsedRoute, ParseSpecResponse, ApiError } from '../types/api'
 import Icon from './Icon'
+import ShareDialog from './ShareDialog'
 
 interface SpecMeta {
   name: string
@@ -102,6 +103,7 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
   const [showUrlInput, setShowUrlInput] = useState(false)
   const [urlInput, setUrlInput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [showShare, setShowShare] = useState(false)
 
   // Common tail of every load path: remember the spec, fetch the routes and
   // hand everything to the app
@@ -310,6 +312,26 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
+            onClick={() => setShowShare(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 10px',
+              borderRadius: 4,
+              border: `1px solid ${accentColor}50`,
+              background: accentColor + '18',
+              color: accentColor,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'var(--display)'
+            }}
+          >
+            <Icon name="Share2" size={11} strokeWidth={2} />
+            Share
+          </button>
+          <button
             onClick={editSpec}
             style={{
               display: 'flex',
@@ -349,6 +371,10 @@ const SpecUploader: React.FC<SpecUploaderProps> = ({
           </button>
         </div>
       </div>
+
+      {showShare && (
+        <ShareDialog routes={routes} accentColor={accentColor} onClose={() => setShowShare(false)} />
+      )}
 
       {/* Paste Input Modal for spec-loaded mode */}
       {showPasteInput && (

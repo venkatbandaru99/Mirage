@@ -14,6 +14,10 @@ const DataGenerator = require('./generator');
 const SpecParser = require('./parser');
 const { fetchSpecText, SafeFetchError } = require('./safe-fetch');
 const { validateRequest } = require('./request-validator');
+const { ShareStore, RateLimiter } = require('./share-store');
+
+// /m/<id>/... - public shared mocks
+const SHARE_ROUTE = /^\/m\/([A-Za-z0-9_-]{8})(\/.*)?$/;
 
 class MockServer {
   constructor(parsedPaths, options = {}) {
@@ -24,6 +28,10 @@ class MockServer {
     this.webMode = options.webMode || false;
     // Validate mock requests against the spec unless turned off (--no-validate)
     this.validateRequests = options.validateRequests !== false;
+    // Shared mocks and their abuse limits
+    this.shareStore = options.shareStore || new ShareStore();
+    this.shareCreateLimiter = new RateLimiter({ limit: 20, windowMs: 60 * 60 * 1000 }); // per IP
+    this.shareTrafficLimiter = new RateLimiter({ limit: 600, windowMs: 60 * 1000 }); // per share
     // Routes from the --spec file in CLI mode; web mode loads specs per session
     this.cliPaths = parsedPaths || {};
 
@@ -47,7 +55,7 @@ class MockServer {
     }
     const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
-    this.app.use(session({
+    const sessionMiddleware = session({
       secret: sessionSecret,
       resave: false,
       saveUninitialized: true,
@@ -55,7 +63,11 @@ class MockServer {
         secure: false, // Set to true in production with HTTPS
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
       }
-    }));
+    });
+    // Shared mocks are public and cookie-less; skip sessions there so every
+    // curl/CI call doesn't create a new server-side session
+    this.app.use((req, res, next) =>
+      SHARE_ROUTE.test(req.path) ? next() : sessionMiddleware(req, res, next));
     
     this._setupMiddleware();
     this._setupWebRoutes();
@@ -201,6 +213,39 @@ class MockServer {
       res.json(this._sampleRequest(route));
     });
 
+    // Shared mock link for this session's spec. POST creates it, or updates
+    // it with the current spec while keeping the same link.
+    this.app.post('/api/share', (req, res) => {
+      const sessionData = this._getSessionData(req);
+      if (Object.keys(sessionData.parsedPaths).length === 0) {
+        return res.status(400).json({ error: 'No spec loaded', message: 'Load a spec before sharing it' });
+      }
+      if (!this.shareCreateLimiter.allow(req.ip)) {
+        return res.status(429).json({ error: 'Too many requests', message: 'Share limit reached - try again later' });
+      }
+
+      try {
+        const share = this.shareStore.save(sessionData.sessionId, {
+          parsedPaths: sessionData.parsedPaths,
+          title: sessionData.specTitle,
+          specVersion: sessionData.specVersion
+        });
+        res.json(this._shareInfo(req, share));
+      } catch (error) {
+        res.status(400).json({ error: 'Could not share this spec', message: error.message });
+      }
+    });
+
+    this.app.get('/api/share', (req, res) => {
+      const share = this.shareStore.getForSession(this._getSessionData(req).sessionId);
+      res.json({ share: share ? this._shareInfo(req, share) : null });
+    });
+
+    this.app.delete('/api/share', (req, res) => {
+      const removed = this.shareStore.deleteForSession(this._getSessionData(req).sessionId);
+      res.json({ success: true, removed });
+    });
+
     this.app.get('/api/routes', (req, res) => {
       const sessionData = this._getSessionData(req);
       const routes = Object.entries(sessionData.parsedPaths).map(([key, info]) => ({
@@ -326,6 +371,8 @@ class MockServer {
     // Store the spec content and type for re-validation in session
     sessionData.lastSpecContent = text;
     sessionData.lastSpecType = type;
+    sessionData.specTitle = specParser.getSpec()?.info?.title;
+    sessionData.specVersion = specParser.getSpecVersion();
 
     return {
       success: true,
@@ -399,6 +446,52 @@ class MockServer {
     return res.status(status).json(status >= 400
       ? { error: reason, status, message: `Simulated ${status} response` }
       : { status, message: reason });
+  }
+
+  _shareInfo(req, share) {
+    return {
+      id: share.id,
+      url: `${req.protocol}://${req.get('host')}/m/${share.id}`,
+      title: share.title,
+      endpoints: Object.keys(share.parsedPaths).length,
+      createdAt: new Date(share.createdAt).toISOString(),
+      updatedAt: new Date(share.updatedAt).toISOString(),
+      expiresAt: new Date(share.expiresAt).toISOString()
+    };
+  }
+
+  // Public shared mocks: /m/<id>/<spec path>. No session needed; the same
+  // validation, simulation and example controls apply.
+  _handleShareRequest(req, res) {
+    const [, id, subPath = '/'] = SHARE_ROUTE.exec(req.path);
+    res.setHeader('X-Robots-Tag', 'noindex');
+
+    const share = this.shareStore.get(id);
+    if (!share) {
+      return res.status(404).json({
+        error: 'Share not found or expired',
+        message: 'This shared mock link does not exist or has expired. Shared links last 7 days.'
+      });
+    }
+    if (!this.shareTrafficLimiter.allow(id)) {
+      return res.status(429).json({ error: 'Too many requests', message: 'This shared mock is receiving too many requests - slow down' });
+    }
+
+    if (req.method === 'GET' && subPath === '/_mirage/routes') {
+      return res.json({
+        title: share.title,
+        expiresAt: new Date(share.expiresAt).toISOString(),
+        routes: Object.keys(share.parsedPaths)
+      });
+    }
+
+    if (!this._dispatchMock(req, res, share.parsedPaths, subPath)) {
+      res.status(404).json({
+        error: 'Not Found',
+        message: `Route ${req.method} ${subPath} not found in this shared mock`,
+        availableRoutes: Object.keys(share.parsedPaths)
+      });
+    }
   }
 
   // Find the spec route for a request. Tries an exact "METHOD /path" key
@@ -485,6 +578,9 @@ class MockServer {
   }
 
   _setupMockRoutes() {
+    // Shared mocks first - they don't depend on the visitor's session
+    this.app.all(SHARE_ROUTE, (req, res) => this._handleShareRequest(req, res));
+
     // Set up a catch-all handler for dynamic routes
     this.app.use((req, res, next) => {
       // Skip API routes and static files
@@ -704,6 +800,7 @@ class MockServer {
   }
 
   stop() {
+    this.shareStore.close();
     return new Promise((resolve) => {
       if (this.server) {
         this.server.close(() => {
