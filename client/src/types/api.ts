@@ -48,3 +48,10 @@ export interface RequestFormData {
   headers: Record<string, string>;
   body: string;
 }
+// Per-request mock controls chosen in the response panel; sent as __ query
+// parameters (see _readControls in src/server.js)
+export interface MockOptions {
+  status: string;       // '' = default, else a status code
+  delay: string;        // '' = none, else milliseconds
+  useExamples: boolean; // return the spec's examples instead of generated data
+}

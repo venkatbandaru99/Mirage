@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ParsedRoute } from '../types/api'
+import { ParsedRoute, MockOptions } from '../types/api'
 import Icon from './Icon'
 
 interface ResponseData {
@@ -15,6 +15,98 @@ interface ResponsePanelProps {
   response: ResponseData | null
   loading: boolean
   accentColor: string
+  mockOptions: MockOptions
+  onMockOptionsChange: (options: MockOptions) => void
+}
+
+const COMMON_ERROR_CODES = ['400', '401', '403', '404', '429', '500', '503']
+const DELAYS = [
+  { value: '', label: 'None' },
+  { value: '500', label: '500 ms' },
+  { value: '1000', label: '1 s' },
+  { value: '3000', label: '3 s' },
+  { value: '200-2000', label: 'Random 0.2–2 s' }
+]
+
+const controlLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  fontSize: 11,
+  color: 'var(--text3)',
+  fontFamily: 'var(--display)',
+  whiteSpace: 'nowrap'
+}
+
+const selectStyle: React.CSSProperties = {
+  padding: '3px 6px',
+  borderRadius: 4,
+  border: '1px solid var(--border2)',
+  background: 'var(--surface)',
+  color: 'var(--text2)',
+  fontSize: 11,
+  fontFamily: 'var(--mono)'
+}
+
+// Status / delay / examples controls, sent as __ query parameters. Status
+// codes the spec defines for this route come first.
+const MockControls: React.FC<{
+  endpoint: ParsedRoute
+  options: MockOptions
+  onChange: (options: MockOptions) => void
+}> = ({ endpoint, options, onChange }) => {
+  const specCodes = (endpoint.responseTypes || []).filter(code => /^\d{3}$/.test(code))
+  const otherCodes = COMMON_ERROR_CODES.filter(code => !specCodes.includes(code))
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 16,
+      flexWrap: 'wrap',
+      padding: '8px 16px',
+      borderBottom: '1px solid var(--border)',
+      background: 'var(--surface2)',
+      flexShrink: 0
+    }}>
+      <label style={controlLabelStyle}>
+        Status
+        <select
+          value={options.status}
+          onChange={(e) => onChange({ ...options, status: e.target.value })}
+          style={selectStyle}
+        >
+          <option value="">Default</option>
+          {specCodes.length > 0 && (
+            <optgroup label="Defined in spec">
+              {specCodes.map(code => <option key={code} value={code}>{code}</option>)}
+            </optgroup>
+          )}
+          <optgroup label="Other">
+            {otherCodes.map(code => <option key={code} value={code}>{code}</option>)}
+          </optgroup>
+        </select>
+      </label>
+      <label style={controlLabelStyle}>
+        Delay
+        <select
+          value={options.delay}
+          onChange={(e) => onChange({ ...options, delay: e.target.value })}
+          style={selectStyle}
+        >
+          {DELAYS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+        </select>
+      </label>
+      <label style={{ ...controlLabelStyle, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={options.useExamples}
+          onChange={(e) => onChange({ ...options, useExamples: e.target.checked })}
+        />
+        Use spec examples
+      </label>
+    </div>
+  )
 }
 
 // JSON syntax highlighter
@@ -76,7 +168,9 @@ const ResponsePanel: React.FC<ResponsePanelProps> = ({
   onTryEndpoint,
   response,
   loading,
-  accentColor
+  accentColor,
+  mockOptions,
+  onMockOptionsChange
 }) => {
   const [copied, setCopied] = useState(false)
 
@@ -235,6 +329,8 @@ const ResponsePanel: React.FC<ResponsePanelProps> = ({
           )}
         </div>
       </div>
+
+      <MockControls endpoint={selectedEndpoint} options={mockOptions} onChange={onMockOptionsChange} />
 
       {/* JSON body */}
       <div style={{ flex: 1, overflow: 'auto', padding: '14px 16px' }}>

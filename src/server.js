@@ -9,6 +9,7 @@ const session = require('express-session');
 const compression = require('compression');
 const crypto = require('crypto');
 const path = require('path');
+const { STATUS_CODES } = require('http');
 const DataGenerator = require('./generator');
 const SpecParser = require('./parser');
 const { fetchSpecText, SafeFetchError } = require('./safe-fetch');
@@ -87,7 +88,8 @@ class MockServer {
       
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Headers',
+        'Content-Type, Authorization, Prefer, X-Mirage-Status, X-Mirage-Delay, X-Mirage-Example, X-Mirage-Validate');
       
       if (req.method === 'OPTIONS') {
         return res.status(200).end();
@@ -361,11 +363,37 @@ class MockServer {
     const prefer = String(req.headers.prefer || '').toLowerCase();
     const truthy = v => v !== undefined && ['1', 'true', 'yes', ''].includes(String(v).toLowerCase());
 
+    // Status: ?__status=404, X-Mirage-Status: 404, or Prefer: code=404 (Prism)
+    const preferCode = /(?:^|[\s,;])code=(\d{3})/.exec(prefer);
+    const statusInput = q.__status ?? req.headers['x-mirage-status'] ?? (preferCode && preferCode[1]);
+    const status = parseInt(statusInput, 10);
+
     return {
       useExamples: truthy(q.__example) ||
         truthy(req.headers['x-mirage-example']) ||
-        /(^|[\s,;])example(=|$|[\s,;])/.test(prefer)
+        /(^|[\s,;])example(=|$|[\s,;])/.test(prefer),
+      status: status >= 200 && status <= 599 ? status : null,
+      delayMs: parseDelay(q.__delay ?? req.headers['x-mirage-delay'])
     };
+  }
+
+  // Respond with a simulated status code. Uses the spec's response for that
+  // code when it defines one (schema or example), otherwise a generic body.
+  _respondWithStatus(res, route, status, controls) {
+    if (status === 204 || status === 304) {
+      return res.status(status).end();
+    }
+
+    const entry = route.responses[String(status)] ||
+      (status >= 400 ? route.responses.default : undefined);
+    if (entry && (entry.schema || (controls.useExamples && entry.example !== undefined))) {
+      return res.status(status).json(this.generator.generateResponseData(entry, controls));
+    }
+
+    const reason = STATUS_CODES[status] || 'Status';
+    return res.status(status).json(status >= 400
+      ? { error: reason, status, message: `Simulated ${status} response` }
+      : { status, message: reason });
   }
 
   // Find the spec route for a request. Tries an exact "METHOD /path" key
@@ -414,7 +442,22 @@ class MockServer {
     if (!match) {
       return false;
     }
-    this._handleRequest(req, res, match.route, this._readControls(req));
+    const controls = this._readControls(req);
+    const respond = () => {
+      if (res.headersSent) return;
+      if (controls.status) {
+        this._respondWithStatus(res, match.route, controls.status, controls);
+      } else {
+        this._handleRequest(req, res, match.route, controls);
+      }
+    };
+
+    if (controls.delayMs > 0) {
+      res.setHeader('X-Mirage-Delay', String(controls.delayMs));
+      setTimeout(respond, controls.delayMs);
+    } else {
+      respond();
+    }
     return true;
   }
 
@@ -653,6 +696,22 @@ class MockServer {
   getApp() {
     return this.app;
   }
+}
+
+// "800" -> 800 ms, "200-800" -> random value in that range. Capped at 10 s.
+const MAX_DELAY_MS = 10000;
+function parseDelay(input) {
+  if (input === undefined || input === null || input === '') return 0;
+  const range = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(String(input));
+  let ms;
+  if (range) {
+    const [lo, hi] = [Number(range[1]), Number(range[2])].sort((a, b) => a - b);
+    ms = lo + Math.floor(Math.random() * (hi - lo + 1));
+  } else {
+    ms = Number(input);
+  }
+  if (!Number.isFinite(ms) || ms <= 0) return 0;
+  return Math.min(Math.round(ms), MAX_DELAY_MS);
 }
 
 function looksLikeJson(text) {

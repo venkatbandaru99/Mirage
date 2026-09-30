@@ -12,7 +12,7 @@ import ResponsePanel from './components/ResponsePanel'
 import LogStrip, { LogEntry } from './components/LogStrip'
 import SimpleValidationPanel from './components/SimpleValidationPanel'
 import Footer from './components/Footer'
-import { ParsedRoute } from './types/api'
+import { ParsedRoute, MockOptions } from './types/api'
 
 interface ResponseData {
   status: number
@@ -35,6 +35,7 @@ function App() {
   const [validationResults, setValidationResults] = useState<any>(null)
   const [showValidation, setShowValidation] = useState(true)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [mockOptions, setMockOptions] = useState<MockOptions>({ status: '', delay: '', useExamples: false })
   const accentColor = '#a78bfa'
 
   // Initialize session on app load
@@ -104,6 +105,10 @@ function App() {
       for (const [name, value] of Object.entries(sample.query || {})) {
         query.set(name, String(value))
       }
+      // Mock controls from the response panel
+      if (mockOptions.status) query.set('__status', mockOptions.status)
+      if (mockOptions.delay) query.set('__delay', mockOptions.delay)
+      if (mockOptions.useExamples) query.set('__example', 'true')
       const queryString = query.toString()
       const url = queryString ? `${sample.path}?${queryString}` : sample.path
 
@@ -119,13 +124,16 @@ function App() {
       })
 
       const responseTime = Date.now() - startTime
-      let responseBody = null
-
-      try {
-        responseBody = await response.json()
-      } catch (err) {
-        // Handle non-JSON responses
-        responseBody = await response.text()
+      // Read the body once: JSON when possible, raw text otherwise, null when
+      // empty (e.g. 204 No Content)
+      const responseText = await response.text()
+      let responseBody: any = null
+      if (responseText) {
+        try {
+          responseBody = JSON.parse(responseText)
+        } catch (err) {
+          responseBody = responseText
+        }
       }
 
       setResponse({
@@ -333,6 +341,8 @@ function App() {
               onTryEndpoint={handleTryEndpoint}
               response={response}
               loading={loadingResponse}
+              mockOptions={mockOptions}
+              onMockOptionsChange={setMockOptions}
               accentColor={accentColor}
             />
           </div>
