@@ -54,4 +54,5 @@ export interface MockOptions {
   status: string;       // '' = default, else a status code
   delay: string;        // '' = none, else milliseconds
   useExamples: boolean; // return the spec's examples instead of generated data
+  validate: boolean;    // validate requests against the spec (server default: on)
 }

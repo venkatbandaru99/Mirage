@@ -35,7 +35,7 @@ function App() {
   const [validationResults, setValidationResults] = useState<any>(null)
   const [showValidation, setShowValidation] = useState(true)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [mockOptions, setMockOptions] = useState<MockOptions>({ status: '', delay: '', useExamples: false })
+  const [mockOptions, setMockOptions] = useState<MockOptions>({ status: '', delay: '', useExamples: false, validate: true })
   const accentColor = '#a78bfa'
 
   // Initialize session on app load
@@ -109,6 +109,7 @@ function App() {
       if (mockOptions.status) query.set('__status', mockOptions.status)
       if (mockOptions.delay) query.set('__delay', mockOptions.delay)
       if (mockOptions.useExamples) query.set('__example', 'true')
+      if (!mockOptions.validate) query.set('__validate', 'false')
       const queryString = query.toString()
       const url = queryString ? `${sample.path}?${queryString}` : sample.path
 

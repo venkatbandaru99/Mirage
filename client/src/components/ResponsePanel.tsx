@@ -105,6 +105,17 @@ const MockControls: React.FC<{
         />
         Use spec examples
       </label>
+      <label
+        style={{ ...controlLabelStyle, cursor: 'pointer' }}
+        title="Reject requests that don't match the spec with a 400 listing each problem"
+      >
+        <input
+          type="checkbox"
+          checked={options.validate}
+          onChange={(e) => onChange({ ...options, validate: e.target.checked })}
+        />
+        Validate requests
+      </label>
     </div>
   )
 }

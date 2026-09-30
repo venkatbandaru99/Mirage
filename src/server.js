@@ -13,6 +13,7 @@ const { STATUS_CODES } = require('http');
 const DataGenerator = require('./generator');
 const SpecParser = require('./parser');
 const { fetchSpecText, SafeFetchError } = require('./safe-fetch');
+const { validateRequest } = require('./request-validator');
 
 class MockServer {
   constructor(parsedPaths, options = {}) {
@@ -21,6 +22,8 @@ class MockServer {
     this.generator = new DataGenerator();
     this.parser = new SpecParser();
     this.webMode = options.webMode || false;
+    // Validate mock requests against the spec unless turned off (--no-validate)
+    this.validateRequests = options.validateRequests !== false;
     // Routes from the --spec file in CLI mode; web mode loads specs per session
     this.cliPaths = parsedPaths || {};
 
@@ -362,6 +365,7 @@ class MockServer {
     const q = req.query || {};
     const prefer = String(req.headers.prefer || '').toLowerCase();
     const truthy = v => v !== undefined && ['1', 'true', 'yes', ''].includes(String(v).toLowerCase());
+    const falsy = v => v !== undefined && ['0', 'false', 'no', 'off'].includes(String(v).toLowerCase());
 
     // Status: ?__status=404, X-Mirage-Status: 404, or Prefer: code=404 (Prism)
     const preferCode = /(?:^|[\s,;])code=(\d{3})/.exec(prefer);
@@ -373,6 +377,7 @@ class MockServer {
         truthy(req.headers['x-mirage-example']) ||
         /(^|[\s,;])example(=|$|[\s,;])/.test(prefer),
       status: status >= 200 && status <= 599 ? status : null,
+      validate: this.validateRequests && !falsy(q.__validate) && !falsy(req.headers['x-mirage-validate']),
       delayMs: parseDelay(q.__delay ?? req.headers['x-mirage-delay'])
     };
   }
@@ -445,6 +450,24 @@ class MockServer {
     const controls = this._readControls(req);
     const respond = () => {
       if (res.headersSent) return;
+
+      // A forced status is an explicit simulation, so it skips validation
+      if (controls.validate && !controls.status) {
+        const hasJsonBody = req.is('application/json') || req.is('application/*+json');
+        const errors = validateRequest(match.route, {
+          pathParams: match.pathParams,
+          query: req.query,
+          body: hasJsonBody ? req.body : undefined
+        });
+        if (errors.length > 0) {
+          return res.status(400).json({
+            error: 'Request validation failed',
+            message: 'The request does not match the OpenAPI spec. Send ?__validate=false to skip validation.',
+            errors
+          });
+        }
+      }
+
       if (controls.status) {
         this._respondWithStatus(res, match.route, controls.status, controls);
       } else {
