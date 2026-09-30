@@ -134,39 +134,11 @@ class MockServer {
         if (!spec) {
           return res.status(400).json({ error: 'OpenAPI spec is required' });
         }
-
-        let specData;
-        let specParser = new SpecParser();
-        
-        if (type === 'yaml' || type === 'json') {
-          // Parse spec from text content
-          if (type === 'yaml') {
-            const yaml = require('js-yaml');
-            specData = yaml.load(spec);
-          } else {
-            specData = JSON.parse(spec);
-          }
-          
-          // Validate the spec with original text for line numbers
-          await specParser._validateAndParseSpec(specData, spec, type);
-          sessionData.parsedPaths = specParser.getParsedPaths();
-        } else {
+        if (type !== 'yaml' && type !== 'json') {
           return res.status(400).json({ error: 'Invalid spec type. Must be yaml or json' });
         }
 
-        const validationResults = specParser.getValidationResults();
-
-        // Store the spec content and type for re-validation in session
-        sessionData.lastSpecContent = spec;
-        sessionData.lastSpecType = type;
-
-        res.json({
-          success: true,
-          paths: sessionData.parsedPaths,
-          info: specParser.getSpec()?.info || {},
-          validation: validationResults,
-          sessionId: sessionData.sessionId
-        });
+        res.json(await this._loadSpec(sessionData, spec, type));
       } catch (error) {
         res.status(400).json({
           error: 'Failed to parse OpenAPI spec',
@@ -284,6 +256,80 @@ class MockServer {
     });
   }
 
+  // Parse and validate spec text, then store its routes in the session.
+  // Shared by the paste/upload endpoint and the load-from-URL endpoint.
+  async _loadSpec(sessionData, text, type) {
+    const yaml = require('js-yaml');
+    const specData = type === 'yaml' ? yaml.load(text) : JSON.parse(text);
+
+    const specParser = new SpecParser();
+    // Validate the spec with original text for line numbers
+    await specParser._validateAndParseSpec(specData, text, type);
+    sessionData.parsedPaths = specParser.getParsedPaths();
+
+    // Store the spec content and type for re-validation in session
+    sessionData.lastSpecContent = text;
+    sessionData.lastSpecType = type;
+
+    return {
+      success: true,
+      paths: sessionData.parsedPaths,
+      info: specParser.getSpec()?.info || {},
+      validation: specParser.getValidationResults(),
+      sessionId: sessionData.sessionId
+    };
+  }
+
+  // Find the spec route for a request. Tries an exact "METHOD /path" key
+  // first, then OpenAPI path templates such as /customers/{id}.
+  // Returns { route, pathParams } or null.
+  _matchRoute(parsedPaths, method, requestPath) {
+    const exact = parsedPaths[`${method} ${requestPath}`];
+    if (exact) {
+      return { route: exact, pathParams: {} };
+    }
+
+    for (const [key, route] of Object.entries(parsedPaths)) {
+      const [routeMethod, routePath] = key.split(' ', 2);
+      if (routeMethod !== method) continue;
+
+      const names = [];
+      const pattern = routePath
+        .split('/')
+        .map(segment => segment.replace(/[.*+?^$()|[\]\\]/g, '\\$&')
+          .replace(/\{([^}]+)\}/g, (_, name) => {
+            names.push(name);
+            return '([^/]+)';
+          }))
+        .join('/');
+      const match = new RegExp(`^${pattern}$`).exec(requestPath);
+      if (match) {
+        const pathParams = {};
+        names.forEach((name, i) => {
+          try {
+            pathParams[name] = decodeURIComponent(match[i + 1]);
+          } catch (error) {
+            pathParams[name] = match[i + 1]; // malformed %-escape
+          }
+        });
+        return { route, pathParams };
+      }
+    }
+    return null;
+  }
+
+  // Respond to a mock request from a set of spec routes. Used by the session
+  // catch-all below and by shared mock URLs. Returns false when no route
+  // matches so the caller can fall through to a 404.
+  _dispatchMock(req, res, parsedPaths, requestPath = req.path) {
+    const match = this._matchRoute(parsedPaths, req.method, requestPath);
+    if (!match) {
+      return false;
+    }
+    this._handleRequest(req, res, match.route);
+    return true;
+  }
+
   _setupMockRoutes() {
     // Set up a catch-all handler for dynamic routes
     this.app.use((req, res, next) => {
@@ -314,29 +360,10 @@ class MockServer {
         });
       }
 
-      // Find matching route in session's parsedPaths
-      const routeKey = `${req.method} ${req.path}`;
-      let matchedRoute = sessionData.parsedPaths[routeKey];
-      
-      // If not found, try with path parameters
-      if (!matchedRoute) {
-        for (const [key, routeInfo] of Object.entries(sessionData.parsedPaths)) {
-          const [method, path] = key.split(' ', 2);
-          if (method === req.method) {
-            const expressPath = this._convertOpenAPIPathToExpress(path);
-            const pathRegex = new RegExp('^' + expressPath.replace(/:[^/]+/g, '[^/]+') + '$');
-            if (pathRegex.test(req.path)) {
-              matchedRoute = routeInfo;
-              break;
-            }
-          }
-        }
+      if (this._dispatchMock(req, res, sessionData.parsedPaths)) {
+        return;
       }
-      
-      if (matchedRoute) {
-        return this._handleRequest(req, res, matchedRoute);
-      }
-      
+
       // Continue to next middleware (will eventually hit 404 handler)
       next();
     });
@@ -394,10 +421,6 @@ class MockServer {
       return true;
     }
     return req.accepts(['json', 'html']) === 'html';
-  }
-
-  _convertOpenAPIPathToExpress(openAPIPath) {
-    return openAPIPath.replace(/{([^}]+)}/g, ':$1');
   }
 
   _handleRequest(req, res, routeInfo) {
